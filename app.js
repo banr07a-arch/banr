@@ -48,7 +48,9 @@ let page="home",previous=[],selected={},activeBooking=null,authReturn="details",
 let walkInFacility=new URLSearchParams(location.search).get("facility");
 const facility=()=>facilities.find(item=>item.id===selected.facility);
 const doctor=()=>facility()?.doctors[selected.doctor];
-const appointments=()=>!phone?[]:live?bookings:bookings.filter(b=>b.phone===phone);
+const signedIn=()=>live?Boolean(user):Boolean(phone);
+const loginLabel=live?"Email Login":"Mobile OTP Login";
+const appointments=()=>!signedIn()?[]:live?bookings:bookings.filter(b=>b.phone===phone);
 const walkins=()=>appointments().filter(b=>b.facility===walkInFacility&&b.source==="walkin"&&active(b));
 const dayKey=(offset=0)=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date(Date.now()+86400000*offset));
 const prettyDay=date=>new Intl.DateTimeFormat("en-IN",{weekday:"short",day:"numeric",month:"short",timeZone:"Asia/Kolkata"}).format(new Date(date+"T12:00:00+05:30"));
@@ -137,6 +139,14 @@ async function openSchedule(){
  }
 }
 function login(){
+ if(live)return pageTitle("Email Login")+
+ '<form class="panel raised stack" data-form="email-login">'+
+ '<label class="field">Email<input type="email" name="email" autocomplete="email" required></label>'+
+ '<label class="field">Password<input type="password" name="password" autocomplete="current-password" required></label>'+
+ '<p class="err" id="form-error" role="alert"></p><p id="form-status" role="status"></p>'+
+ '<button class="primary" type="submit" value="signin">Sign In</button>'+
+ '<button class="primary" type="submit" value="signup">Create Account</button></form>';
+
  return pageTitle(pendingPhone?"Verify mobile number":"Mobile OTP Login")+
  '<form class="panel raised stack" data-form="otp">'+
  (pendingPhone?'<p>Verifying +91 '+esc(pendingPhone)+'</p><label class="field">OTP<input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>'+(live?'':'<p class="notice">Demo OTP is <strong>123456</strong>. No SMS is sent.</p>'):
@@ -145,11 +155,12 @@ function login(){
  (pendingPhone?btn("Change Number","change-number","link"):"")+'</form>';
 }
 function profileFields(){
- const details=profile?.phone===phone?profile:{};
+ const details=(live?profile:profile?.phone===phone?profile:null)??{};
  return '<label class="field">Name<input name="name" autocomplete="name" required maxlength="80" value="'+esc(details.name)+'"></label>'+
  '<label class="field">Age<input name="age" type="number" required min="0" max="120" value="'+esc(details.age)+'"></label>'+
  '<label class="field">Sex<select name="sex" required><option value="">Select</option>'+["Female","Male","Intersex","Prefer not to say"].map(s=>'<option '+(details.sex===s?"selected":"")+'>'+s+'</option>').join("")+'</select></label>'+
- '<label class="field">Verified mobile number<input value="+91 '+esc(phone)+'" readonly></label>';
+ (live?'<label class="field">Email<input value="'+esc(user?.email)+'" readonly></label>':
+ '<label class="field">Verified mobile number<input value="+91 '+esc(phone)+'" readonly></label>');
 }
 function details(){
  const session=sessionOptions()[selected.session];
@@ -168,7 +179,7 @@ function confirm(){
 function token(){
  const all=appointments().filter(active);
  const b=all.find(item=>item.id===activeBooking?.id)??all[0];
- if(!b) return pageTitle("My Token")+'<div class="panel raised stack"><h2>No active token</h2><p>Open an active appointment to see your token.</p>'+btn("Find a Doctor","nav:home")+(live?(phone?'':btn("Mobile OTP Login","login:token","link")):btn("Try Walk-in Tracking","walkin:raj","link"))+'</div>';
+ if(!b) return pageTitle("My Token")+'<div class="panel raised stack"><h2>No active token</h2><p>Open an active appointment to see your token.</p>'+btn("Find a Doctor","nav:home")+(live?(signedIn()?'':btn(loginLabel,"login:token","link")):btn("Try Walk-in Tracking","walkin:raj","link"))+'</div>';
  const nowServing=b.opd_status==="paused"||!b.current?null:b.current;
  const {ahead,minutes}=waitEstimate(b);
  const status=b.opd_status==="paused"?"OPD paused · Timing update pending":
@@ -188,17 +199,17 @@ function appointmentPage(){
  return pageTitle("Appointments")+'<div class="chips">'+["upcoming","past"].map(tab=>'<button class="chip" data-action="history:'+tab+'" aria-pressed="'+(historyTab===tab)+'">'+(tab==="upcoming"?"Upcoming":"Past")+'</button>').join("")+'</div>'+
  (accountError?'<p class="notice" role="alert">'+esc(accountError)+'</p>':'')+
  (list.length?list.map(b=>'<article class="panel raised stack"><h2>'+esc(b.doctor)+'</h2><p>'+esc(b.facilityName)+' · '+prettyDay(b.date)+' · '+b.sessionName+'</p><p class="tag">Token '+tokenLabel(b.token)+'</p>'+(
- active(b)?btn("Track Token","track:"+b.id):'<p>'+({completed:"Completed",no_show:"No Show",cancelled:"Cancelled"}[b.status]||"Session ended")+'</p>')+'</article>').join(""):'<div class="panel raised stack"><p>No '+historyTab+' appointments.</p>'+(!phone&&live?btn("Mobile OTP Login","login:appointments"):btn("Find a Doctor","nav:home"))+'</div>');
+ active(b)?btn("Track Token","track:"+b.id):'<p>'+({completed:"Completed",no_show:"No Show",cancelled:"Cancelled"}[b.status]||"Session ended")+'</p>')+'</article>').join(""):'<div class="panel raised stack"><p>No '+historyTab+' appointments.</p>'+(!signedIn()&&live?btn(loginLabel,"login:appointments"):btn("Find a Doctor","nav:home"))+'</div>');
 }
 function account(){
- return pageTitle("Account")+(accountError?'<p role="alert" class="notice">'+esc(accountError)+'</p>':'')+(phone?'<form class="panel raised stack" data-form="profile">'+profileFields()+'<p class="err" id="form-error" role="alert"></p><button class="primary" type="submit">Save Profile</button>'+btn("Sign Out","signout","link")+'</form>':
- '<div class="panel raised stack"><p>Verify your mobile number to manage your patient profile and bookings.</p>'+btn("Mobile OTP Login","login:account")+'</div>');
+ return pageTitle("Account")+(accountError?'<p role="alert" class="notice">'+esc(accountError)+'</p>':'')+(signedIn()?'<form class="panel raised stack" data-form="profile">'+profileFields()+'<p class="err" id="form-error" role="alert"></p><button class="primary" type="submit">Save Profile</button>'+btn("Sign Out","signout","link")+'</form>':
+ '<div class="panel raised stack"><p>Sign in to manage your patient profile and bookings.</p>'+btn(loginLabel,"login:account")+'</div>');
 }
 function walkin(){
  const f=facilities.find(f=>f.id===walkInFacility);
  const found=walkins();
  return pageTitle("Walk-in Tracking")+'<div class="panel raised stack"><h2>'+esc(f?.name||"Facility")+'</h2>'+
- (found.length?found.map(b=>btn(esc(b.doctor)+" · "+tokenLabel(b.token),"track:"+b.id)).join(""):phone?
+ (live&&!phone?'<p>Walk-in tokens require a verified mobile number. Online bookings are available with email sign-in.</p>'+btn("Find a Doctor","nav:home"):found.length?found.map(b=>btn(esc(b.doctor)+" · "+tokenLabel(b.token),"track:"+b.id)).join(""):phone?
  '<p>No active walk-in appointment found for this number.</p>'+btn("Try Another Number","login:walkin"):
  '<p>Verify the mobile number you gave at reception to open your token.</p>'+btn("Verify Mobile Number","login:walkin"))+'</div>';
 }
@@ -226,7 +237,7 @@ document.addEventListener("click",async event=>{
  case "retry-catalog":await loadCatalog();render();break;
  case "date":selected.date=value;selected.session=null;render();break;
  case "session":selected.session=Number(value);render();break;
- case "continue":phone?go("details"):startLogin("details");break;
+ case "continue":signedIn()?go("details"):startLogin("details");break;
  case "login":startLogin(value);break;
  case "change-number":pendingPhone="";render();break;
  case "history":historyTab=value;render();break;
@@ -259,7 +270,7 @@ document.addEventListener("submit",async event=>{
  if(busy)return;
  const data=Object.fromEntries(new FormData(event.target));
  if(type==="location"){locationName=data.area.trim()||"Mumbai";save("location",locationName);go("home",true);return;}
- if(live){await submitLive(type,data,event.target);return;}
+ if(live){await submitLive(type,data,event.target,event.submitter?.value);return;}
  if(type==="otp"){
   if(!pendingPhone){pendingPhone=data.phone;render();screen.querySelector("[name=otp]").focus();return;}
   if(data.otp!=="123456"){document.getElementById("form-error").textContent="Enter the demo code 123456.";return;}
@@ -302,31 +313,35 @@ async function refreshAppointments(){
 }
 async function setAccount(nextUser){
  const number=nextUser?.phone?.replace(/^\+?91(?=\d{10}$)/,"");
- if(!nextUser||!/^\d{10}$/.test(number??"")){clearAccount();return;}
+ if(!nextUser){clearAccount();return;}
  if(user?.id!==nextUser.id)clearAccount();
- user=nextUser;phone=number;
+ user=nextUser;phone=/^\d{10}$/.test(number??"")?number:"";
  const [details]=await Promise.all([backend.profile(),refreshAppointments()]);
  if(user?.id===nextUser.id){profile=details?{...details,phone}:null;accountError="";}
 }
-async function submitLive(type,details,form){
+async function submitLive(type,details,form,action){
  busy=true;
  const button=form.querySelector("button[type=submit]");
  button.disabled=true;
  const error=form.querySelector("#form-error");
  error.textContent="";
  try{
-  if(type==="otp"){
-   if(!pendingPhone){
-    await backend.sendOtp("+91"+details.phone);
-    pendingPhone=details.phone;
-    render();
-    screen.querySelector("[name=otp]").focus();
+  if(type==="email-login"){
+   const status=form.querySelector("#form-status");
+   status.textContent="";
+   const email=details.email.trim();
+   if(action==="signup"&&details.password.length<8){
+    error.textContent="Use at least 8 characters for your password.";
     return;
    }
-   await setAccount(await backend.verifyOtp("+91"+pendingPhone,details.otp));
-   pendingPhone="";
-   const found=walkins();
-   if(authReturn==="walkin"&&found.length===1){activeBooking=found[0];go("token",true);return;}
+   const result=action==="signup"
+    ?await backend.signUp(email,details.password)
+    :await backend.signIn(email,details.password);
+   if(!result.session){
+    status.textContent="Check your email to confirm your account, then return here to sign in.";
+    return;
+   }
+   await setAccount(result.user);
    go(authReturn,true);
    return;
   }
