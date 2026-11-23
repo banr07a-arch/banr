@@ -15,3 +15,7 @@ Use Node.js 22.12+ and run `npm ci` followed by `npm run dev`. Without Supabase 
 5. Run `npm run build` for the Vercel deployment. Set the same public environment variables in Vercel and use `dist` as the output directory.
 
 A facility QR can point to `/?facility=<facility-id>`. Walk-in lookup requires a verified mobile number. Email sign-in supports online bookings and their tokens. The patient app reads queue state every five seconds on the tracking screen. A staff workflow must eventually supply walk-in records and queue changes.
+
+## Patient content
+
+Edit `patient-content.js` to update BANR support email, approved refund terms and Home promotions. Set `sponsored: true` on paid slides. For Expert Q&A, add `topic`, `question`, `answer` and a `review` record with `status: "reviewed"`, `verified: true`, `name`, `credential` and `date` only after verifying the healthcare professional and receiving approval. Keep unapproved answers outside the frontend source because source content is public.

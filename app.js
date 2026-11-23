@@ -1,3 +1,4 @@
+import { supportEmail, refundTerms, promotions, expertAnswers, helpFAQs, privacySections } from "./patient-content.js";
 import { backend, live } from "./backend.js";
 const icons={
  home:'<path d="m3 10 9-7 9 7v10h-6v-7H9v7H3z"/>',
@@ -104,13 +105,103 @@ function results(){
  return [["Clinic","Nearest Clinic"],["Hospital","Nearest Hospital"]].map(([type,title])=>
  '<div class="sectionhead"><h2>'+title+'</h2>'+btn("View More","filter:"+type,"link")+'</div>'+(matches.filter(f=>f.type===type).map(card).join("")||'<p class="small">No listings in this area.</p>')).join("");
 }
+const resourcePages = [
+ ["help","Help Center"], ["privacy","Privacy Policy"], ["refund","Refund Policy"], ["about","About BANR"],
+];
+const reviewedAnswers = expertAnswers.filter(item=>
+ item.review?.status==="reviewed" && item.review.verified === true &&
+ item.review.name && item.review.credential && item.review.date &&
+ item.topic && item.question && item.answer);
+const expertEmpty = "No reviewed answers are available yet.";
+let bannerIndex=0, expertTopic="", expertAnswerIndex=null;
+
+function homeBanners(){
+ const banners=[
+  '<section class="hero">'+image("hero","")+'<h2>Skip the Wait,<br>Book Your OPD<br>with <strong>BANR</strong></h2><p>✓ Live Token &nbsp; ✓ Wait Time &nbsp; ✓ Easy Booking</p></section>',
+  ...promotions.map(slide=>'<section class="hero"><h2>'+esc(slide.title)+'</h2><p>'+
+   esc(slide.description)+'</p>'+(slide.sponsored?'<p class="sponsored">Sponsored</p>':'')+'</section>'),
+ ];
+ return '<section aria-label="Home banners"><div class="banner-track" tabindex="0" aria-label="Swipe or use the slide buttons to browse banners">'+
+ banners.map((banner,index)=>'<div class="banner-slide" aria-label="Slide '+(index+1)+' of '+banners.length+'">'+banner+'</div>').join("")+
+ '</div><div class="dots">'+banners.map((_,index)=>
+ '<button type="button" data-banner="'+index+'" aria-label="Show slide '+(index+1)+'" aria-pressed="'+(index===bannerIndex)+'"></button>').join("")+'</div></section>';
+}
+
+function connectHomeBanners(){
+ const track=screen.querySelector(".banner-track");
+ const dots=[...screen.querySelectorAll("[data-banner]")];
+ let pendingSlide=null;
+ const select=(index,behavior)=>{
+  bannerIndex=index;
+  dots.forEach((dot,i)=>dot.setAttribute("aria-pressed",String(i===index)));
+  track.scrollTo({left:track.children[index].offsetLeft,behavior});
+ };
+ select(bannerIndex,"instant");
+ dots.forEach((dot,index)=>dot.addEventListener("click",()=>{
+  pendingSlide=index;
+  select(index,matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth");
+ }));
+ track.addEventListener("scroll",()=>{
+  const index=Math.min(dots.length-1,Math.max(0,Math.round(track.scrollLeft/track.clientWidth)));
+  if(pendingSlide!==null&&index!==pendingSlide)return;
+  pendingSlide=null;
+  bannerIndex=index;
+  dots.forEach((dot,i)=>dot.setAttribute("aria-pressed",String(i===index)));
+ },{passive:true});
+ track.addEventListener("pointerdown",()=>{pendingSlide=null;});
+ track.addEventListener("keydown",()=>{pendingSlide=null;});
+}
+
+function expertHome(){
+ return '<section><div class="sectionhead"><h2>Expert Q&amp;A</h2>'+btn("View All","experts","link")+
+ '</div>'+(reviewedAnswers.length?expertRows(reviewedAnswers.slice(0,2)):'<p class="panel raised">'+expertEmpty+'</p>')+'</section>';
+}
+function expertRows(items){
+ return items.map(item=>'<article class="panel raised stack"><p class="subtle">'+esc(item.topic)+'</p>'+
+ btn(esc(item.question),"expert-answer:"+reviewedAnswers.indexOf(item),"chip")+'</article>').join("");
+}
+function experts(){
+ const topics=[...new Set(reviewedAnswers.map(item=>item.topic))].sort();
+ const items=expertTopic?reviewedAnswers.filter(item=>item.topic===expertTopic):reviewedAnswers;
+ return pageTitle("Expert Q&A")+(topics.length?
+ '<div class="chips">'+["",...topics].map((topic,index)=>'<button type="button" class="chip" data-action="expert-topic:'+index+
+ '" aria-pressed="'+(topic===expertTopic)+'">'+esc(topic||"All topics")+'</button>').join("")+'</div>'+expertRows(items):
+ '<p class="panel raised">'+expertEmpty+'</p>');
+}
+function expertAnswer(){
+ const item=reviewedAnswers[expertAnswerIndex];
+ if(!item)return experts();
+ return pageTitle(item.question)+'<article class="panel raised stack"><p class="subtle">'+esc(item.topic)+'</p>'+
+ item.answer.split(/\n\s*\n/).map(paragraph=>'<p>'+esc(paragraph)+'</p>').join("")+
+ '<p class="notice">Reviewed by '+esc(item.review.name)+' · '+esc(item.review.credential)+' · '+esc(item.review.date)+'</p></article>';
+}
+function help(){
+ return pageTitle("Help Center")+'<section class="stack">'+helpFAQs.map(([question,answer])=>
+ '<details class="panel raised faq"><summary>'+esc(question)+'</summary><p>'+esc(answer)+'</p></details>').join("")+
+ (supportEmail?'<p class="panel raised">BANR support <a href="mailto:'+esc(supportEmail)+'">'+esc(supportEmail)+'</a></p>':
+ '<p class="notice">For help with an existing visit, contact your clinic or hospital reception.</p>')+'</section>';
+}
+function privacy(){
+ return pageTitle("Privacy Policy")+'<section class="panel raised stack">'+privacySections.map(([heading,copy])=>
+ '<div><h2>'+esc(heading)+'</h2><p>'+esc(copy)+'</p></div>').join("")+
+ (supportEmail?'<p>Privacy questions <a href="mailto:'+esc(supportEmail)+'">'+esc(supportEmail)+'</a></p>':'')+'</section>';
+}
+function refund(){
+ return pageTitle("Refund Policy")+'<section class="panel raised stack">'+(refundTerms.length?
+ refundTerms.map(copy=>'<p>'+esc(copy)+'</p>').join(""):
+ '<p class="notice">Draft · Refund terms are awaiting approval.</p>')+'</section>';
+}
+function about(){
+ return pageTitle("About BANR")+'<section class="panel raised stack"><p>BANR helps you find clinics and hospitals in your area, choose a doctor and book an available OPD visit.</p>'+
+ '<p>After booking, open Appointments to find your visit or My Token to see your token, the latest queue status and an estimated wait when available.</p></section>';
+}
 function home(){
  return '<div class="intro row"><h1 tabindex="-1">Home</h1>'+btn(icon("pin")+esc(locationName)+icon("down"),"location","place raised")+'</div>'+
  '<label class="search raised">'+icon("search")+'<input id="search" type="search" aria-label="Search doctors, clinics and hospitals" value="'+esc(query)+'" placeholder="Search doctors, clinics, hospitals…"></label>'+
- '<section class="hero">'+image("hero","")+'<h2>Skip the Wait,<br>Book Your OPD<br>with <strong>BANR</strong></h2><p>✓ Live Token &nbsp; ✓ Wait Time &nbsp; ✓ Easy Booking</p></section><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>'+
+ homeBanners()+
  '<div class="sectionhead"><h2>Find Doctor by Specialist</h2>'+btn("View All","specialties","link")+'</div>'+
  '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynae","user","Gynae"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
- '<div id="results">'+results()+'</div>'+(live?'':demo);
+ '<div id="results">'+results()+'</div>'+expertHome()+(live?'':demo);
 }
 let facilitySessions=null, facilityStatusRequest=0;
 async function refreshFacilitySessions(f){
@@ -242,7 +333,8 @@ function appointmentPage(){
 }
 function account(){
  return pageTitle("Account")+(accountError?'<p role="alert" class="notice">'+esc(accountError)+'</p>':'')+(signedIn()?'<form class="panel raised stack" data-form="profile">'+profileFields()+'<p class="err" id="form-error" role="alert"></p><button class="primary" type="submit">Save Profile</button>'+btn("Sign Out","signout","link")+'</form>':
- '<div class="panel raised stack"><p>Sign in to manage your patient profile and bookings.</p>'+btn(loginLabel,"login:account")+'</div>');
+ '<div class="panel raised stack"><p>Sign in to manage your patient profile and bookings.</p>'+btn(loginLabel,"login:account")+'</div>')+
+ '<section class="panel raised stack" aria-label="Account resources">'+resourcePages.map(([id,label])=>btn(label,id,"chip")).join("")+'</section>';
 }
 function walkin(){
  const f=facilities.find(f=>f.id===walkInFacility);
@@ -254,11 +346,12 @@ function walkin(){
 }
 function render(){
  shell();
- const pages={home,facility:detail,schedule,login,details,confirm,token,appointments:appointmentPage,account,walkin,
+ const pages={home,facility:detail,schedule,login,details,confirm,token,appointments:appointmentPage,account,walkin,help,privacy,refund,about,experts,expertAnswer,
  location:()=>pageTitle("Change Location")+'<form class="panel raised stack" data-form="location"><label class="field">Area or city<input name="area" maxlength="45" value="'+esc(locationName)+'" required></label>'+(live?'':'<p class="notice">The sample facility list is fixed in this demo.</p>')+'<button class="primary" type="submit">Save Location</button></form>',
  notifications:()=>pageTitle("Notifications")+'<p class="panel raised">No new notifications.</p>',
  specialties:()=>pageTitle("Specialties")+'<div class="panel raised stack">'+["General","Physician","Dentist","Gynae","Surgery"].map(s=>btn(s,"filter:"+s,"chip")).join("")+'</div>'};
  screen.innerHTML=pages[page]().replaceAll(/<div class="photo"><img /g,'<div><img class="photo" ');
+ if(page==="home")connectHomeBanners();
 }
 document.addEventListener("click",async event=>{
  const control=event.target.closest("[data-action]");
@@ -267,6 +360,18 @@ document.addEventListener("click",async event=>{
  switch(action){
  case "back":page=previous.pop()??"home";render();scrollTo(0,0);break;
  case "nav":go(value,true);break;
+ case "help":case "privacy":case "refund":case "about":case "experts":go(action);break;
+ case "expert-topic":{
+  const topics=[...new Set(reviewedAnswers.map(item=>item.topic))].sort();
+  expertTopic=["",...topics][Number(value)]??"";
+  render();
+  screen.querySelector('[data-action="expert-topic:'+Number(value)+'"]')?.focus();
+  break;
+ }
+ case "expert-answer":
+  expertAnswerIndex=Number(value);
+  if(reviewedAnswers[expertAnswerIndex])go("expertAnswer");
+  break;
  case "location":case "notifications":case "specialties":go(action);break;
  case "clear":category="";query="";render();document.getElementById("search").focus();break;
  case "filter":category=value;query="";go("home",true);document.getElementById("results").scrollIntoView({block:"center"});break;
