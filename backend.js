@@ -20,10 +20,18 @@ export const backend = {
     return session ? (await data(client.auth.getUser())).user : null;
   },
   authChanges: callback => client.auth.onAuthStateChange(callback),
-  sendOtp: phone => data(client.auth.signInWithOtp({ phone })),
-  verifyOtp: async (phone, token) => (await data(client.auth.verifyOtp({ phone, token, type: "sms" }))).user,
+  signIn: (email, password) => data(client.auth.signInWithPassword({ email, password })),
+  signUp: (email, password) => data(client.auth.signUp({
+    email, password, options: { emailRedirectTo: window.location.origin },
+  })),
   signOut: () => data(client.auth.signOut()),
   facilities: () => data(client.from("facilities").select("*,doctors(*)").order("name")),
+  facilitySessions: (doctorIds, day) => doctorIds.length
+    ? data(client.from("opd_sessions").select("doctor_id,starts_at,ends_at,status,booked_count,capacity")
+      .in("doctor_id", doctorIds).gte("starts_at", day+"T00:00:00+05:30")
+      .lt("starts_at", new Date(Date.parse(day+"T00:00:00+05:30")+86400000).toISOString())
+      .order("starts_at"))
+    : Promise.resolve([]),
   sessions: doctorId => data(client.from("opd_sessions").select("*").eq("doctor_id", doctorId)
     .gt("ends_at", new Date().toISOString()).neq("status", "closed").order("starts_at")),
   profile: () => data(client.from("patient_profiles").select("name,age,sex").maybeSingle()),

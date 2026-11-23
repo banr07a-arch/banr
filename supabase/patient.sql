@@ -88,10 +88,12 @@ declare
   booking_id uuid;
   new_token integer;
 begin
-  select '+' || ltrim(phone, '+') into verified_phone
-    from auth.users where id = patient and phone_confirmed_at is not null;
-  if verified_phone is null then
-    raise exception 'Verify your mobile number before booking.';
+  select case when phone_confirmed_at is not null then '+' || ltrim(phone, '+') end
+    into verified_phone
+    from auth.users
+    where id = patient and (email_confirmed_at is not null or phone_confirmed_at is not null);
+  if not found then
+    raise exception 'Verify your account before booking.';
   end if;
 
   select * into session_row from public.opd_sessions where id = p_session for update;
@@ -137,8 +139,9 @@ language sql stable security definer set search_path = '' as $$
   join public.opd_sessions s on s.id = a.session_id
   join public.doctors d on d.id = s.doctor_id
   join public.facilities f on f.id = d.facility_id
-  join auth.users u on u.id = auth.uid() and u.phone_confirmed_at is not null
-  where a.patient_id = u.id or (a.source = 'walkin' and a.walkin_phone = '+' || ltrim(u.phone, '+'))
+  join auth.users u on u.id = auth.uid()
+    and (u.email_confirmed_at is not null or u.phone_confirmed_at is not null)
+  where a.patient_id = u.id or (a.source = 'walkin' and u.phone_confirmed_at is not null and a.walkin_phone = '+' || ltrim(u.phone, '+'))
   order by s.starts_at desc, a.token;
 $$;
 
