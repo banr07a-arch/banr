@@ -26,6 +26,12 @@ export const backend = {
   })),
   signOut: () => data(client.auth.signOut()),
   facilities: () => data(client.from("facilities").select("*,doctors(*)").order("name")),
+  facilitySessions: (doctorIds, day) => doctorIds.length
+    ? data(client.from("opd_sessions").select("doctor_id,starts_at,ends_at,status,booked_count,capacity")
+      .in("doctor_id", doctorIds).gte("starts_at", day+"T00:00:00+05:30")
+      .lt("starts_at", new Date(Date.parse(day+"T00:00:00+05:30")+86400000).toISOString())
+      .order("starts_at"))
+    : Promise.resolve([]),
   sessions: doctorId => data(client.from("opd_sessions").select("*").eq("doctor_id", doctorId)
     .gt("ends_at", new Date().toISOString()).neq("status", "closed").order("starts_at")),
   profile: () => data(client.from("patient_profiles").select("name,age,sex").maybeSingle()),

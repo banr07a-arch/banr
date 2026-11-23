@@ -103,11 +103,36 @@ function home(){
  '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynae","user","Gynae"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
  '<div id="results">'+results()+'</div>'+(live?'':demo);
 }
+let facilitySessions=null;
+async function refreshFacilitySessions(f){
+ try{
+  const rows=await backend.facilitySessions(f.doctors.map(d=>d.id),dayKey());
+  if(page!=="facility"||facility()?.id!==f.id)return;
+  facilitySessions=rows;
+ }catch{
+  if(page!=="facility"||facility()?.id!==f.id)return;
+  facilitySessions=false;
+ }
+ render();
+}
+function doctorOpdStatus(id){
+ if(facilitySessions===null)return "Checking today’s OPD…";
+ if(facilitySessions===false)return "Today’s OPD status unavailable";
+ const today=facilitySessions.filter(s=>s.doctor_id===id);
+ const now=Date.now();
+ const current=today.find(s=>Date.parse(s.starts_at)<=now&&now<Date.parse(s.ends_at)&&s.status!=="closed");
+ const upcoming=today.find(s=>Date.parse(s.starts_at)>now&&s.status!=="closed");
+ const session=current||upcoming;
+ if(!session)return today.length?"OPD closed for today":"No OPD scheduled today";
+ const status=current?{open:"OPD Live",paused:"OPD Paused",late:"OPD Delayed",scheduled:"OPD Not Started"}[session.status]:"OPD Scheduled";
+ const availability=[current,upcoming].some(s=>s&&available(s))||today.some(s=>now<Date.parse(s.ends_at)&&s.status!=="closed"&&available(s));
+ return status+" · "+sessionHours(session)+" · "+(availability?"Today’s booking available":"Fully booked today");
+}
 function detail(){
  const f=facility();
  const directions=live?'<a class="link" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(f.latitude!=null&&f.longitude!=null?f.latitude+","+f.longitude:f.address)+'">Get Directions</a>':"";
  return pageTitle(f.name)+'<div class="panel raised stack"><div class="photo">'+image(f.img,"")+'</div><p>'+esc(live?f.address:f.area+" · "+f.distance)+'</p><p>'+esc(f.hours)+'</p>'+directions+'</div><h2>Doctors at '+esc(f.name)+'</h2>'+
- f.doctors.map((d,i)=>'<article class="panel raised stack"><h3>'+esc(d.name)+'</h3><p class="subtle">'+esc(d.specialty)+' · ₹'+d.fee+'</p>'+btn("Book Appointment","book:"+i)+'</article>').join("");
+ f.doctors.map((d,i)=>'<article class="panel raised stack"><h3>'+esc(d.name)+'</h3><p class="subtle">'+esc(d.specialty)+' · ₹'+d.fee+'</p>'+(live?'<p class="tag">'+doctorOpdStatus(d.id)+'</p>':'')+btn("Book Appointment","book:"+i)+'</article>').join("");
 }
 function schedule(){
  const dates=live?[...new Set(availableSessions.map(s=>dateKey(s.starts_at)))]:[0,1,2,3].map(dayKey);
@@ -231,7 +256,7 @@ document.addEventListener("click",async event=>{
  case "location":case "notifications":case "specialties":go(action);break;
  case "clear":category="";query="";render();document.getElementById("search").focus();break;
  case "filter":category=value;query="";go("home",true);document.getElementById("results").scrollIntoView({block:"center"});break;
- case "facility":selected={facility:value};go("facility");break;
+ case "facility":selected={facility:value};facilitySessions=null;go("facility");if(live)void refreshFacilitySessions(facility());break;
  case "book":selected={facility:selected.facility,doctor:Number(value),date:dayKey()};await openSchedule();break;
  case "retry-schedule":await openSchedule();break;
  case "retry-catalog":await loadCatalog();render();break;
@@ -383,6 +408,13 @@ async function start(){
     if(["confirm","details"].includes(page))go("account",true);else render();
    }
   });
+  let refreshingFacility=false;
+  setInterval(async()=>{
+   if(page!=="facility"||refreshingFacility)return;
+   refreshingFacility=true;
+   try{await refreshFacilitySessions(facility());}
+   finally{refreshingFacility=false;}
+  },15000);
   let refreshing=false;
   setInterval(async()=>{
    if(!user||refreshing||!["token","appointments","walkin"].includes(page)||busy)return;
