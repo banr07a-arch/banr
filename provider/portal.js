@@ -111,7 +111,8 @@ function settings() {
     '<button class="primary">Add Doctor</button></form>' +
     (doctor ? '<form class="panel raised stack" data-form="doctor"><h2>Edit Selected Doctor</h2>' +
       `<input type="hidden" name="doctor_id" value="${escape(doctor.id)}">` + doctorFields(doctor) +
-      '<button class="primary">Save Doctor</button></form><form class="panel raised stack" data-form="session">' +
+      '<button class="primary">Save Doctor</button></form>' + button("Delete Selected Doctor", "delete-doctor") +
+      '<form class="panel raised stack" data-form="session">' +
       '<h2>Add OPD Session</h2>' + scheduleFields() + '<button class="primary">Add Session</button></form>' : '') +
     (session && ["scheduled", "late"].includes(session.status) && !session.booked_count && Date.parse(session.starts_at) > Date.now()
       ? '<form class="panel raised stack" data-form="session"><h2>Edit Selected OPD</h2>' +
@@ -144,6 +145,7 @@ function liveOpd() {
 }
 
 let queue = null;
+let queueRevision = 0;
 function showQueue(next) {
   const panel = screen.querySelector("#provider-queue");
   if (!panel) return;
@@ -168,16 +170,18 @@ function showQueue(next) {
 async function refreshQueue() {
   if (tab !== "opd" || !sessionId || polling) return;
   const session = sessionId;
+  const revision = queueRevision;
   polling = true;
   try {
     const next = await read(client.rpc("banr_provider_queue", { p_session: session }));
-    if (tab === "opd" && sessionId === session) showQueue(next);
+    if (tab === "opd" && sessionId === session && queueRevision === revision) showQueue(next);
   } finally {
     polling = false;
   }
 }
 
 function render() {
+  queueRevision++;
   queue = null;
   screen.innerHTML = '<div class="chips">' + button("Facility Settings", "settings") + button("Live OPD", "opd") +
     button("Sign Out", "signout") + '</div><section class="panel raised stack">' +
@@ -201,6 +205,7 @@ function render() {
 
 async function queueAction(action, data = {}) {
   if (!queue || !sessionId) throw new Error("Wait for the selected queue to load.");
+  queueRevision++;
   const next = await read(client.rpc("banr_provider_action", {
     p_session: sessionId, p_action: action, p_expected_token: queue.current_token, p_data: data,
   }));
@@ -244,6 +249,12 @@ screen.addEventListener("click", event => {
       tab = action;
       await loadSessions();
       render();
+    } else if (action === "delete-doctor") {
+      const doctor = doctors.find(item => item.id === doctorId);
+      if (!doctor || !confirm(`Delete ${doctor.name}? Doctors with OPD sessions cannot be deleted.`)) return;
+      await read(client.rpc("banr_provider_delete_doctor", { p_facility: facilityId, p_doctor: doctor.id }));
+      await loadAccount();
+      notice.textContent = "Doctor deleted.";
     } else if (action === "close") {
       if (!queue) return;
       const pending = queue.waiting + Number(queue.serving);
