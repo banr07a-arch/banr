@@ -31,7 +31,16 @@ const dateKey=value=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).
 const active=b=>!live||(!["completed","no_show","cancelled"].includes(b.status)&&b.opd_status!=="closed"&&Date.parse(b.ends_at)>Date.now());
 const sessionOptions=()=>live?availableSessions.filter(s=>dateKey(s.starts_at)===selected.date):demoSessions;
 const sessionHours=s=>live?formatTime(s.starts_at)+" – "+formatTime(s.ends_at):s.hours;
-const available=s=>!live||s.booked_count<s.capacity;
+const sessionUnavailable=s=>{
+ if(!s)return "Choose a session";
+ if(!live)return "";
+ if(s.status==="closed"||Date.parse(s.ends_at)<=Date.now())return "Session ended";
+ if(s.booked_count>=s.capacity)return "Fully booked";
+ return "";
+};
+const available=s=>!sessionUnavailable(s);
+const sessionStatus=s=>({open:"OPD Live",paused:"OPD Paused",late:"OPD Delayed",scheduled:"OPD Scheduled"})[s.status]??"";
+const sessionLabel=s=>s.name+" · "+sessionHours(s)+(live?" · "+(sessionUnavailable(s)||sessionStatus(s)):"");
 const waitEstimate=b=>{
  if(!live){
   const ahead=Math.max(0,b.token-b.current-1);
@@ -103,14 +112,15 @@ function home(){
  '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynae","user","Gynae"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
  '<div id="results">'+results()+'</div>'+(live?'':demo);
 }
-let facilitySessions=null;
+let facilitySessions=null, facilityStatusRequest=0;
 async function refreshFacilitySessions(f){
+ const request=++facilityStatusRequest;
  try{
   const rows=await backend.facilitySessions(f.doctors.map(d=>d.id),dayKey());
-  if(page!=="facility"||facility()?.id!==f.id)return;
+  if(request!==facilityStatusRequest||page!=="facility"||facility()?.id!==f.id)return;
   facilitySessions=rows;
  }catch{
-  if(page!=="facility"||facility()?.id!==f.id)return;
+  if(request!==facilityStatusRequest||page!=="facility"||facility()?.id!==f.id)return;
   facilitySessions=false;
  }
  render();
@@ -125,7 +135,7 @@ function doctorOpdStatus(id){
  const session=current||upcoming;
  if(!session)return today.length?"OPD closed for today":"No OPD scheduled today";
  const status=current?{open:"OPD Live",paused:"OPD Paused",late:"OPD Delayed",scheduled:"OPD Not Started"}[session.status]:"OPD Scheduled";
- const availability=[current,upcoming].some(s=>s&&available(s))||today.some(s=>now<Date.parse(s.ends_at)&&s.status!=="closed"&&available(s));
+ const availability=today.some(available);
  return status+" · "+sessionHours(session)+" · "+(availability?"Today’s booking available":"Fully booked today");
 }
 function detail(){
@@ -139,9 +149,9 @@ function schedule(){
  const sessionList=sessionOptions();
  const body=scheduleLoading?'<p>Loading OPD sessions…</p>':loadError?'<p role="alert">'+esc(loadError)+'</p>'+btn("Retry","retry-schedule","link"):
  !dates.length?'<p>No upcoming sessions for this doctor.</p>':
- '<div><h3>Choose a date</h3><div class="chips">'+dates.map(date=>'<button class="chip" data-action="date:'+date+'" aria-pressed="'+(selected.date===date)+'">'+prettyDay(date)+'</button>').join("")+'</div></div>'+
- '<div><h3>Choose a session</h3><div class="stack">'+sessionList.map((s,i)=>'<button class="chip" data-action="session:'+i+'" aria-pressed="'+(selected.session===i)+'" '+(available(s)?'':'disabled')+'>'+s.name+' · '+sessionHours(s)+(available(s)?'':' · Fully Booked')+'</button>').join("")+'</div></div>'+
- '<button class="primary full" data-action="continue" '+(selected.session==null?"disabled":"")+'>Continue</button>';
+ '<div><h3>Choose a date</h3><div class="chips">'+dates.map(date=>'<button class="chip" data-action="date:'+date+'" aria-pressed="'+(selected.date===date)+'">'+(date===dayKey()?"Today · ":"")+prettyDay(date)+'</button>').join("")+'</div></div>'+
+ '<div><h3>Choose a session</h3><div class="stack">'+sessionList.map((s,i)=>'<button class="chip" data-action="session:'+i+'" aria-pressed="'+(selected.session===i)+'" '+(available(s)?'':'disabled')+'>'+esc(sessionLabel(s))+'</button>').join("")+'</div></div>'+
+ '<button class="primary full" data-action="continue" '+(selected.session==null||!available(sessionList[selected.session])?"disabled":"")+'>Continue</button>';
  return pageTitle("Book Appointment")+'<div class="panel raised stack"><h2>'+esc(doctor().name)+'</h2><p>'+esc(facility().name)+' · ₹'+doctor().fee+'</p>'+body+'</div>';
 }
 async function openSchedule(){
@@ -156,7 +166,8 @@ async function openSchedule(){
   const sessions=await backend.sessions(doctor().id);
   if(request!==scheduleRequest)return;
   availableSessions=sessions;
-  selected.date=sessions.length?dateKey(sessions[0].starts_at):"";
+  const firstAvailable=sessions.find(available)??sessions[0];
+  selected.date=firstAvailable?dateKey(firstAvailable.starts_at):"";
  }catch{
   if(request===scheduleRequest)loadError="Could not load OPD sessions.";
  }finally{
@@ -202,21 +213,24 @@ function confirm(){
  btn("Track My Token","track:"+b.id)+'</div>';
 }
 function token(){
- const all=appointments().filter(active);
+ const all=appointments().filter(active).sort((a,b)=>live
+  ? Date.parse(a.starts_at)-Date.parse(b.starts_at)||a.token-b.token
+  : a.date.localeCompare(b.date)||a.token-b.token);
  const b=all.find(item=>item.id===activeBooking?.id)??all[0];
- if(!b) return pageTitle("My Token")+'<div class="panel raised stack"><h2>No active token</h2><p>Open an active appointment to see your token.</p>'+btn("Find a Doctor","nav:home")+(live?(signedIn()?'':btn(loginLabel,"login:token","link")):btn("Try Walk-in Tracking","walkin:raj","link"))+'</div>';
- const nowServing=b.opd_status==="paused"||!b.current?null:b.current;
+ if(!b) return pageTitle("My Token")+(queueError?'<p role="alert" class="notice">'+esc(queueError)+'</p>':'')+'<div class="panel raised stack"><h2>No active token</h2><p>Open an active appointment to see your token.</p>'+btn("Find a Doctor","nav:home")+(live?(signedIn()?'':btn(loginLabel,"login:token","link")):btn("Try Walk-in Tracking","walkin:raj","link"))+'</div>';
+ const nowServing=(live&&b.opd_status!=="open")||!b.current?null:b.current;
  const {ahead,minutes}=waitEstimate(b);
  const status=b.opd_status==="paused"?"OPD paused · Timing update pending":
   b.opd_status==="late"?"Doctor running late"+(b.revised_start_at?" · Revised start "+formatTime(b.revised_start_at):""):
   b.opd_status==="scheduled"?"OPD yet to start · "+formatTime(b.starts_at):
   b.status==="serving"||(!live&&b.current>=b.token)?"Your turn now. Please report to reception.":
+  live&&b.current>=b.token?"Please check with reception for your token status.":
   minutes!=null&&minutes<=5?"Your turn is near. Please be ready.":"";
- return pageTitle("My Token")+(all.length>1?'<label class="field">Select appointment<select id="active-booking">'+all.map(item=>'<option value="'+item.id+'" '+(item.id===b.id?"selected":"")+'>'+esc(item.doctor)+' · '+tokenLabel(item.token)+'</option>').join("")+'</select></label>':"")+
- '<section class="panel raised stack">'+(live?'':'<p class="tag">Demo queue</p>')+'<h2>'+esc(b.doctor)+'</h2><p>'+esc(b.facilityName)+' · '+b.sessionName+' OPD</p>'+
+ return pageTitle("My Token")+(all.length>1?'<label class="field">Select appointment<select id="active-booking">'+all.map(item=>'<option value="'+item.id+'" '+(item.id===b.id?"selected":"")+'>'+esc(item.doctor)+' · '+prettyDay(item.date)+' · '+esc(item.sessionName)+' · '+tokenLabel(item.token)+'</option>').join("")+'</select></label>':"")+
+ '<section class="panel raised stack">'+(live?'':'<p class="tag">Demo queue</p>')+'<h2>'+esc(b.doctor)+'</h2><p>'+esc(b.facilityName)+' · '+prettyDay(b.date)+' · '+esc(b.sessionName)+' OPD</p>'+
  '<div class="numbers"><div class="stat"><p>Now Serving</p><div class="number">'+(nowServing==null?"—":tokenLabel(nowServing))+'</div></div><div class="stat"><p>Your Token</p><div class="number">'+tokenLabel(b.token)+'</div></div></div>'+
  (status?'<p><strong>'+status+'</strong></p>':'')+
- (minutes!=null&&b.status!=="serving"&&(live||b.current<b.token)?'<p><strong>'+ahead+'</strong> patients ahead</p><p>Estimated wait <strong>'+minutes+' min</strong><br>Suggested arrival <strong>'+formatTime(Date.now()+Math.max(0,minutes-5)*60000)+'</strong></p>':'')+
+ (minutes!=null&&b.status!=="serving"&&b.current<b.token?'<p><strong>'+ahead+'</strong> patients ahead</p><p>Estimated wait <strong>'+minutes+' min</strong><br>Suggested arrival <strong>'+formatTime(Date.now()+Math.max(0,minutes-5)*60000)+'</strong></p>':'')+
  (live?(queueError?'<p role="alert" class="notice">'+esc(queueError)+'</p>':''):btn("Advance Demo Queue","advance:"+b.id,"link"))+'</section>';
 }
 function appointmentPage(){
@@ -262,7 +276,9 @@ document.addEventListener("click",async event=>{
  case "retry-catalog":await loadCatalog();render();break;
  case "date":selected.date=value;selected.session=null;render();break;
  case "session":selected.session=Number(value);render();break;
- case "continue":signedIn()?go("details"):startLogin("details");break;
+ case "continue":
+  if(!available(sessionOptions()[selected.session])){render();break;}
+  signedIn()?go("details"):startLogin("details");break;
  case "login":startLogin(value);break;
  case "change-number":pendingPhone="";render();break;
  case "history":historyTab=value;render();break;
@@ -379,7 +395,12 @@ async function submitLive(type,details,form,action){
    form.insertAdjacentHTML("beforeend",'<p role="status" class="notice">Profile saved.</p>');
    return;
   }
-  const id=await backend.book(sessionOptions()[selected.session].id,fields);
+  const session=sessionOptions()[selected.session];
+  if(!available(session)){
+   error.textContent="That OPD session is no longer available. Go back and choose another session.";
+   return;
+  }
+  const id=await backend.book(session.id,fields);
   profile={...fields,phone};
   try{await refreshAppointments();}catch{
    accountError="Your booking was saved. Reopen Appointments to load your token.";
