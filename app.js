@@ -1,3 +1,4 @@
+import { currentLocality, searchLocations } from "./location-selector.js";
 import { supportEmail, refundTerms, promotions, expertAnswers, helpFAQs, privacySections } from "./patient-content.js";
 import { backend, live } from "./backend.js";
 const icons={
@@ -344,10 +345,52 @@ function walkin(){
  '<p>No active walk-in appointment found for this number.</p>'+btn("Try Another Number","login:walkin"):
  '<p>Verify the mobile number you gave at reception to open your token.</p>'+btn("Verify Mobile Number","login:walkin"))+'</div>';
 }
+function locationPage(){
+ return pageTitle("Change Location")+
+ '<section class="panel raised stack">'+btn("Use Current Location","use-current-location")+
+ '<p class="small">Uses your device coordinates to look up your locality via Photon (OpenStreetMap).</p>'+
+ '<form class="stack" data-form="location"><label class="field">Search Location<input name="area" type="search" minlength="2" maxlength="100" placeholder="Search for a city or locality in India" required></label>'+
+ '<button class="primary" type="submit">Search</button></form>'+
+ '<p class="small" id="location-status" role="status"></p><div class="stack" id="location-results"></div></section>';
+}
+function selectLocation(name){
+ locationName=name;
+ save("location",name);
+ go("home",true);
+}
+let locationRequest=0;
+async function lookupLocation(query){
+ const status=screen.querySelector("#location-status");
+ const results=screen.querySelector("#location-results");
+ const request=++locationRequest;
+ const isCurrent=()=>page==="location"&&status.isConnected&&request===locationRequest;
+ results.replaceChildren();
+ status.textContent=query?"Searching locations…":"Detecting your locality…";
+ try{
+  if(!query){
+   const name=await currentLocality();
+   if(isCurrent())selectLocation(name);
+   return;
+  }
+  const matches=await searchLocations(query);
+  if(!isCurrent())return;
+  status.textContent=matches.length?"Choose a location.":"No locations found.";
+  for(const {name,context} of matches){
+   const button=document.createElement("button");
+   button.type="button";
+   button.className="chip";
+   button.textContent=context?name+" · "+context:name;
+   button.addEventListener("click",()=>selectLocation(name));
+   results.append(button);
+  }
+ }catch(error){
+  if(isCurrent())status.textContent=query?"Location search failed. Try again.":error.message;
+ }
+}
 function render(){
  shell();
  const pages={home,facility:detail,schedule,login,details,confirm,token,appointments:appointmentPage,account,walkin,help,privacy,refund,about,experts,expertAnswer,
- location:()=>pageTitle("Change Location")+'<form class="panel raised stack" data-form="location"><label class="field">Area or city<input name="area" maxlength="45" value="'+esc(locationName)+'" required></label>'+(live?'':'<p class="notice">The sample facility list is fixed in this demo.</p>')+'<button class="primary" type="submit">Save Location</button></form>',
+ location:locationPage,
  notifications:()=>pageTitle("Notifications")+'<p class="panel raised">No new notifications.</p>',
  specialties:()=>pageTitle("Specialties")+'<div class="panel raised stack">'+["General","Physician","Dentist","Gynae","Surgery"].map(s=>btn(s,"filter:"+s,"chip")).join("")+'</div>'};
  screen.innerHTML=pages[page]().replaceAll(/<div class="photo"><img /g,'<div><img class="photo" ');
@@ -372,6 +415,7 @@ document.addEventListener("click",async event=>{
   expertAnswerIndex=Number(value);
   if(reviewedAnswers[expertAnswerIndex])go("expertAnswer");
   break;
+ case "use-current-location":await lookupLocation();break;
  case "location":case "notifications":case "specialties":go(action);break;
  case "clear":category="";query="";render();document.getElementById("search").focus();break;
  case "filter":category=value;query="";go("home",true);document.getElementById("results").scrollIntoView({block:"center"});break;
@@ -415,7 +459,12 @@ document.addEventListener("submit",async event=>{
  event.preventDefault();
  if(busy)return;
  const data=Object.fromEntries(new FormData(event.target));
- if(type==="location"){locationName=data.area.trim()||"Mumbai";save("location",locationName);go("home",true);return;}
+ if(type==="location"){
+  const area=data.area.trim();
+  if(area.length>=2)await lookupLocation(area);
+  else screen.querySelector("#location-status").textContent="Enter at least two characters.";
+  return;
+ }
  if(live){await submitLive(type,data,event.target,event.submitter?.value);return;}
  if(type==="otp"){
   if(!pendingPhone){pendingPhone=data.phone;render();screen.querySelector("[name=otp]").focus();return;}
