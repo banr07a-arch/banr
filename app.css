@@ -45,3 +45,36 @@
     transform:translateY(2px);filter:brightness(.96)
   }
 }
+
+.banner-track {
+  position: relative;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+  margin-bottom: -8px;
+}
+.banner-track::-webkit-scrollbar { display: none; }
+.banner-slide { flex: 0 0 100%; display: grid; scroll-snap-align: start; }
+.banner-slide .sponsored { align-self: flex-start; margin-top: 6px; font-size: 11px; }
+.dots button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  background: transparent;
+  border-radius: 8px;
+  padding: 0;
+}
+.dots button::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6e9c89;
+}
+.dots button[aria-pressed="true"]::after { background: var(--green); }
+.faq { margin: 0; }
+.faq summary { cursor: pointer; font-weight: 700; }
+.faq p { margin-top: 8px; }
