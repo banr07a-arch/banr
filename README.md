@@ -19,3 +19,9 @@ A facility QR can point to `/?facility=<facility-id>`. Walk-in lookup requires a
 ## Patient content
 
 Edit `patient-content.js` to update BANR support email, approved refund terms and Home promotions. Set `sponsored: true` on paid slides. For Expert Q&A, add `topic`, `question`, `answer` and a `review` record with `status: "reviewed"`, `verified: true`, `name`, `credential` and `date` only after verifying the healthcare professional and receiving approval. Keep unapproved answers outside the frontend source because source content is public.
+
+## Provider portal
+
+The staff portal uses `/provider/` and the same project URL and publishable key as the patient app. Apply `supabase/provider.sql` after the patient schema is installed. Create or invite each staff account in Supabase Auth, then assign the confirmed Auth user ID and facility ID in `banr_private.provider_staff` using the SQL Editor. Staff assignments are managed by the database owner. Use a dedicated staff account and keep `banr_private` outside the Data API's exposed schemas.
+
+OPD times are entered in India Standard Time. A new session copies its doctor's consultation duration, and an upcoming unbooked session can be edited. Walk-ins and online bookings share the same session limit and token sequence. The facility QR opens the patient facility entry point, including the doctor list and the existing verified-mobile walk-in lookup.

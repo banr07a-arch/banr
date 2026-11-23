@@ -233,7 +233,7 @@ function doctorOpdStatus(id){
 function detail(){
  const f=facility();
  const directions=live?'<a class="link" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(f.latitude!=null&&f.longitude!=null?f.latitude+","+f.longitude:f.address)+'">Get Directions</a>':"";
- return pageTitle(f.name)+'<div class="panel raised stack"><div class="photo">'+image(f.img,"")+'</div><p>'+esc(live?f.address:f.area+" · "+f.distance)+'</p><p>'+esc(f.hours)+'</p>'+directions+'</div><h2>Doctors at '+esc(f.name)+'</h2>'+
+ return pageTitle(f.name)+'<div class="panel raised stack"><div class="photo">'+image(f.img,"")+'</div><p>'+esc(live?f.address:f.area+" · "+f.distance)+'</p><p>'+esc(f.hours)+'</p>'+(f.contact?'<p>Contact: '+esc(f.contact)+'</p>':'')+directions+'</div><h2>Doctors at '+esc(f.name)+'</h2>'+
  f.doctors.map((d,i)=>'<article class="panel raised stack"><h3>'+esc(d.name)+'</h3><p class="subtle">'+esc(d.specialty)+' · ₹'+d.fee+'</p>'+(live?'<p class="tag">'+doctorOpdStatus(d.id)+'</p>':'')+btn("Book Appointment","book:"+i)+'</article>').join("");
 }
 function schedule(){
@@ -310,7 +310,7 @@ function token(){
   : a.date.localeCompare(b.date)||a.token-b.token);
  const b=all.find(item=>item.id===activeBooking?.id)??all[0];
  if(!b) return pageTitle("My Token")+(queueError?'<p role="alert" class="notice">'+esc(queueError)+'</p>':'')+'<div class="panel raised stack"><h2>No active token</h2><p>Open an active appointment to see your token.</p>'+btn("Find a Doctor","nav:home")+(live?(signedIn()?'':btn(loginLabel,"login:token","link")):btn("Try Walk-in Tracking","walkin:raj","link"))+'</div>';
- const nowServing=(live&&b.opd_status!=="open")||!b.current?null:b.current;
+ const nowServing=(live&&(b.opd_status!=="open"||!b.current_started_at))||!b.current?null:b.current;
  const {ahead,minutes}=waitEstimate(b);
  const status=b.opd_status==="paused"?"OPD paused · Timing update pending":
   b.opd_status==="late"?"Doctor running late"+(b.revised_start_at?" · Revised start "+formatTime(b.revised_start_at):""):
@@ -340,7 +340,7 @@ function account(){
 function walkin(){
  const f=facilities.find(f=>f.id===walkInFacility);
  const found=walkins();
- return pageTitle("Walk-in Tracking")+'<div class="panel raised stack"><h2>'+esc(f?.name||"Facility")+'</h2>'+
+ return pageTitle("Walk-in Tracking")+'<div class="panel raised stack"><h2>'+esc(f?.name||"Facility")+'</h2>'+(f?btn("View Doctors &amp; Book","facility:"+f.id):'')+
  (live&&!phone?'<p>Walk-in tokens require a verified mobile number. Online bookings are available with email sign-in.</p>'+btn("Find a Doctor","nav:home"):found.length?found.map(b=>btn(esc(b.doctor)+" · "+tokenLabel(b.token),"track:"+b.id)).join(""):phone?
  '<p>No active walk-in appointment found for this number.</p>'+btn("Try Another Number","login:walkin"):
  '<p>Verify the mobile number you gave at reception to open your token.</p>'+btn("Verify Mobile Number","login:walkin"))+'</div>';
