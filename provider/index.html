@@ -31,6 +31,24 @@
       .provider-page [data-form="login"]{grid-column:2}
       .provider-page #provider-walkin{grid-column:2;grid-row:4/span 2}
     }
+    @media(min-width:1000px){
+      .provider-page .app:has([data-action="settings"]){max-width:1600px}
+      .provider-page .app:has([data-action="settings"]) .top{padding-block:16px 6px}
+      .provider-page main:has([data-action="settings"]){padding:10px clamp(18px,3vw,36px) 28px}
+      .provider-page #provider-screen:has([data-action="settings"]){gap:12px}
+      .provider-page #provider-screen:has([data-action="settings"]) > .pagehead{margin:0;font-size:28px}
+      .provider-page #provider-screen > :is(.panel,#provider-queue){padding:16px}
+      .provider-page #provider-screen > :is(form,section) .field{margin:0}
+      .provider-page #provider-screen > :is(#provider-walkin,[data-form="facility"],[data-form="doctor"],[data-form="session"]){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+      .provider-page #provider-screen > :is(#provider-walkin,[data-form="facility"],[data-form="doctor"],[data-form="session"]) > :is(h2,button){grid-column:1/-1}
+      .provider-page #provider-screen > #provider-queue,.provider-page #provider-screen > #provider-late{grid-column:1}
+      .provider-page #provider-screen > #provider-queue{grid-row:4}
+      .provider-page #provider-screen > #provider-late{grid-row:5}
+      .provider-page #provider-screen:has([data-form="facility"]) > button[data-action="delete-doctor"]{justify-self:start;align-self:center}
+    }
+    @media(min-width:1200px){
+      .provider-page #provider-screen:has([data-form="facility"]){grid-template-columns:repeat(3,minmax(0,1fr))}
+    }
   </style>
 </head>
 <body class="provider-page">
