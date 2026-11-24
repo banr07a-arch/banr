@@ -6,8 +6,33 @@
   <meta name="theme-color" content="#064b36">
   <title>BANR Provider Portal</title>
   <link rel="stylesheet" href="../app.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&amp;display=swap">
+  <style>
+    body.provider-page{font-family:Poppins,Arial,sans-serif}
+    .provider-page .app{max-width:1440px}
+    .provider-page .top{display:block;text-align:left;padding:24px clamp(18px,4vw,48px) 12px}
+    .provider-page main{padding:16px clamp(18px,4vw,48px) 48px}
+    .provider-page .panel{min-width:0;margin:0}
+    .provider-page .raised{border-radius:18px;border:1px solid #e9f8ef;background:linear-gradient(145deg,#e6f6ed,#d2eadd);box-shadow:inset 1px 1px 2px #ffffffa6,7px 8px 18px #416e5c36,-5px -5px 14px #f6fffa9c}
+    .provider-page .field :is(input,select){min-height:44px;min-width:0;background:#ddf0e7;box-shadow:inset 3px 3px 7px #416e5c26,inset -3px -3px 7px #ffffffad}
+    .provider-page button{min-height:44px}
+    .provider-page .primary:active{transform:translateY(1px);box-shadow:inset 2px 3px 7px #102b2266}
+    .provider-page [hidden]{display:none!important}
+    .provider-page #provider-screen{display:grid;gap:16px;align-items:start}
+    .provider-page #provider-screen > .chips{flex-wrap:wrap}
+    @media(min-width:1000px){
+      .provider-page #provider-screen{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+      .provider-page #provider-screen > :is(.chips,.pagehead,.chips + section){grid-column:1/-1}
+      .provider-page #provider-screen > .chips + section{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+      .provider-page #provider-screen:has([data-form="login"]) > .pagehead{grid-column:1}
+      .provider-page [data-form="login"]{grid-column:2}
+      .provider-page #provider-walkin{grid-column:2;grid-row:4/span 2}
+    }
+  </style>
 </head>
-<body>
+<body class="provider-page">
   <div class="app">
     <header class="top"><span></span><div><div class="brand">BANR</div><div class="subtitle">Provider Portal</div></div></header>
     <main id="provider">
