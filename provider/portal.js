@@ -14,22 +14,23 @@ let sessions = [];
 let facilityId = "";
 let doctorId = "";
 let sessionId = "";
-let tab = "settings";
+let tab = "opd";
 let busy = false;
 let polling = false;
 
-const labels = { scheduled: "Scheduled", late: "Delayed", open: "Live", paused: "Paused", closed: "Closed" };
+const labels = { scheduled: "Offline", late: "Doctor delayed", open: "Online", paused: "Paused", closed: "Closed" };
 const escape = value => String(value ?? "").replace(/[&<>"']/g, ch =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const field = (label, name, value = "", options = "") =>
   `<label class="field">${label}<input name="${name}" value="${escape(value)}" ${options}></label>`;
-const button = (label, action) =>
-  `<button type="button" class="primary" data-action="${action}">${label}</button>`;
+const button = (label, action, disabled = false) =>
+  `<button type="button" class="primary" data-action="${action}" ${disabled ? "disabled" : ""}>${label}</button>`;
 const option = (value, label, selected) =>
   `<option value="${escape(value)}" ${value === selected ? "selected" : ""}>${escape(label)}</option>`;
 const sessionDate = new Intl.DateTimeFormat("en-IN", {
   dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata",
 });
+const clinicDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", dateStyle: "short" });
 const localDateTime = value => value
   ? new Date(Date.parse(value) + 330 * 60000).toISOString().slice(0, 16) : "";
 const ist = value => value ? value + ":00+05:30" : null;
@@ -86,12 +87,16 @@ async function loadSessions() {
   sessions = doctorId ? await read(client.from("opd_sessions").select("*").eq("doctor_id", doctorId)
     .gt("ends_at", new Date(Date.now() - 86400000).toISOString()).order("starts_at")) : [];
   if (!sessions.some(item => item.id === sessionId)) {
-    sessionId = (sessions.find(item => item.status === "open") ??
-      sessions.find(item => item.status === "paused") ??
-      sessions.find(item => item.status !== "closed" && Date.parse(item.ends_at) > Date.now()) ??
-      sessions.at(-1))?.id ?? "";
+    const now = new Date();
+    const today = sessions.filter(item => clinicDay.format(new Date(item.starts_at)) === clinicDay.format(now));
+    sessionId = (today.find(item => item.status === "open" || item.status === "paused") ??
+      today.find(item => item.status !== "closed" && Date.parse(item.ends_at) > now.getTime()) ??
+      today.at(-1) ?? sessions.find(item => Date.parse(item.starts_at) > now.getTime()))?.id ?? "";
   }
 }
+
+const singleDoctor = () => doctors.length <= 1 &&
+  String(facilities.find(item => item.id === facilityId)?.type ?? "").toLowerCase() !== "hospital";
 
 function settings() {
   const facility = facilities.find(item => item.id === facilityId);
@@ -107,8 +112,8 @@ function settings() {
     field("Facility name", "name", facility.name, "required") + field("Locality", "area", facility.area, "required") +
     field("Address", "address", facility.address, "required") + field("Opening hours", "hours", facility.hours, "required") +
     field("Public contact", "contact", facility.contact) + '<button class="primary">Save Profile</button></form>' +
-    '<form class="panel raised stack" data-form="doctor"><h2>Add Doctor</h2>' + doctorFields() +
-    '<button class="primary">Add Doctor</button></form>' +
+    (singleDoctor() && doctor ? '' : '<form class="panel raised stack" data-form="doctor"><h2>Add Doctor</h2>' + doctorFields() +
+    '<button class="primary">Add Doctor</button></form>') +
     (doctor ? '<form class="panel raised stack" data-form="doctor"><h2>Edit Selected Doctor</h2>' +
       `<input type="hidden" name="doctor_id" value="${escape(doctor.id)}">` + doctorFields(doctor) +
       '<button class="primary">Save Doctor</button></form>' + button("Delete Selected Doctor", "delete-doctor") +
@@ -131,10 +136,12 @@ function doctorFields(doctor = {}) {
 }
 
 function liveOpd() {
-  if (!sessionId) return '<h1 class="pagehead">Live OPD</h1><p class="panel raised">Select or add a doctor and session in Facility Settings.</p>';
-  return '<h1 class="pagehead">Live OPD</h1><section class="panel raised stack" id="provider-queue" aria-live="polite">Loading queue…</section>' +
-    '<form class="panel raised stack" data-form="late" id="provider-late"><h2>OPD Late</h2>' +
-    field("Revised start (IST)", "revised_start_at", "", 'type="datetime-local" required') +
+  if (!sessionId) return '<h1 class="pagehead">Today’s OPD</h1><p class="panel raised">Select or add a doctor and session in Facility Settings.</p>';
+  return '<h1 class="pagehead">Today’s OPD</h1><section class="panel raised stack" id="provider-queue" aria-live="polite">Loading queue…</section>' +
+    '<form class="panel raised stack" data-form="late" id="provider-late"><h2>Doctor Delay</h2>' +
+    `<label class="field">Delay from now<select name="delay_minutes" required><option value="">Choose minutes</option>${
+      [5, 10, 15, 20, 25, 30].map(minutes => option(String(minutes), `${minutes} min`)).join("")
+    }</select></label>` +
     '<button class="primary">Update Start Time</button></form>' +
     '<form class="panel raised stack" data-form="walkin" id="provider-walkin"><h2>Add Walk-in</h2>' +
     field("Patient name", "name", "", "required maxlength=80") + field("Mobile number", "mobile", "", 'type="tel" required') +
@@ -152,8 +159,12 @@ function showQueue(next) {
   queue = next;
   const started = next.status === "open";
   const preStart = ["scheduled", "late"].includes(next.status);
-  const actions = (preStart ? button("Start OPD", "start") : "") +
-    (started ? button("Next", "next") + (next.serving ? button("No Show", "no_show") : "") + button("Pause", "pause") : "") +
+  const lock = Math.max(0, Math.ceil((Date.parse(next.advance_after ?? "") - Date.now()) / 1000)) || 0;
+  const actions = (preStart ? button("Go Online", "start") : "") +
+    (started ? '<div class="queue-advance">' +
+      button(lock ? `Next (${lock}s)` : "Next", "next", lock > 0 || (!next.serving && !next.waiting)) +
+      button("No Show", "no_show", lock > 0 || !next.serving) +
+      '</div>' + button("Pause", "pause") : "") +
     (next.status === "paused" ? button("Resume", "resume") : "") +
     (next.status === "closed" ? "" : button("Close OPD", "close"));
   const html = `<h2>${escape(labels[next.status] ?? next.status)}</h2><div class="numbers">
@@ -161,7 +172,7 @@ function showQueue(next) {
     <div class="stat"><p>Waiting</p><div class="number">${next.waiting}</div></div></div>
     <p>${next.booked_count} of ${next.capacity} appointments booked</p>` +
     (next.revised_start_at ? `<p>Revised start: ${sessionDate.format(new Date(next.revised_start_at))}</p>` : "") +
-    '<div class="chips">' + actions + '</div>';
+    '<div class="queue-actions">' + actions + '</div>';
   if (panel.innerHTML !== html) panel.innerHTML = html;
   screen.querySelector("#provider-late").hidden = !preStart;
   screen.querySelector("#provider-walkin").hidden = next.status === "closed";
@@ -186,7 +197,7 @@ function render() {
   screen.innerHTML = '<div class="chips">' + button("Facility Settings", "settings") + button("Live OPD", "opd") +
     button("Sign Out", "signout") + '</div><section class="panel raised stack">' +
     `<label class="field">Facility<select id="provider-facility">${facilities.map(item => option(item.id,item.name,facilityId)).join("")}</select></label>
-    <label class="field">Doctor<select id="provider-doctor">${doctors.map(item => option(item.id,item.name,doctorId)).join("")}</select></label>
+    ${singleDoctor() ? `<p class="doctor-name">${escape(doctors[0]?.name ?? "")}</p>` : `<label class="field">Doctor<select id="provider-doctor">${doctors.map(item => option(item.id,item.name,doctorId)).join("")}</select></label>`}
     <label class="field">Session<select id="provider-session">${sessions.map(item => option(item.id,sessionLabel(item),sessionId)).join("")}</select></label></section>` +
     (tab === "settings" ? settings() : liveOpd());
   if (tab === "opd") {
@@ -243,7 +254,7 @@ screen.addEventListener("click", event => {
       await read(client.auth.signOut({ scope: "local" }));
       facilities = [];
       facilityId = doctorId = sessionId = "";
-      tab = "settings";
+      tab = "opd";
       login();
     } else if (action === "settings" || action === "opd") {
       tab = action;
@@ -276,7 +287,6 @@ screen.addEventListener("submit", event => {
       await read(client.auth.signInWithPassword({ email: data.email.trim(), password: data.password }));
       await loadAccount();
     } else if (type === "walkin" || type === "late") {
-      if (type === "late") data.revised_start_at = ist(data.revised_start_at);
       await queueAction(type, data);
       form.reset();
     } else {
@@ -300,6 +310,9 @@ if (!client) {
     if (session) await loadAccount();
     else login();
   });
+  setInterval(() => {
+    if (!busy && tab === "opd" && queue?.advance_after && screen.querySelector("[data-action=next]")) showQueue(queue);
+  }, 250);
   setInterval(() => {
     if (!busy && tab === "opd" && sessionId) void refreshQueue().catch(() => {
       error.textContent = "Could not refresh the queue. Showing the last update.";

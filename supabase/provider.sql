@@ -90,6 +90,7 @@ begin
   select jsonb_build_object(
     'status',s.status,'current_token',s.current_token,'booked_count',s.booked_count,
     'capacity',s.capacity,'revised_start_at',s.revised_start_at,
+    'advance_after',s.current_started_at + interval '10 seconds',
     'serving',exists(select 1 from banr_private.appointments a where a.session_id=s.id and a.status='serving'),
     'waiting',(select count(*) from banr_private.appointments a where a.session_id=s.id and a.status='waiting')
   ) into result
@@ -113,6 +114,7 @@ declare
   age_arg integer;
   sex_arg text;
   revised timestamptz;
+  delay_minutes integer;
   ahead integer;
   pending integer;
   wait_minutes integer;
@@ -162,7 +164,12 @@ begin
         ceil(greatest(0,s.consultation_minutes-extract(epoch from (now()-s.current_started_at))/60))::integer end end;
     walkin_result := jsonb_build_object('token',next_token,'waiting_ahead',ahead,'wait_minutes',wait_minutes);
   when 'late' then
-    revised := (p_data->>'revised_start_at')::timestamptz;
+    delay_minutes := (p_data->>'delay_minutes')::integer;
+    if delay_minutes is not null and delay_minutes not in (5,10,15,20,25,30) then
+      raise exception 'Choose a delay of 5 to 30 minutes.';
+    end if;
+    revised := coalesce(clock_timestamp() + make_interval(mins => delay_minutes),
+      (p_data->>'revised_start_at')::timestamptz);
     if s.status not in ('scheduled','late') or revised is null or revised<=now() or revised>=s.ends_at then
       raise exception 'Choose a future start time before the session ends.';
     end if;
@@ -186,6 +193,9 @@ begin
     elsif p_action<>'start' and s.status<>'open' then
       raise exception 'Start or resume OPD first.';
     end if;
+    if p_action in ('next','no_show') and s.current_started_at + interval '10 seconds' > clock_timestamp() then
+      raise exception 'Wait 10 seconds after the current token was called.';
+    end if;
     if p_action='no_show' and not exists(select 1 from banr_private.appointments
       where session_id=s.id and token=s.current_token and status='serving') then
       raise exception 'No current patient to mark absent.';
@@ -200,7 +210,8 @@ begin
       update banr_private.appointments set status='serving' where id=next_id;
     end if;
     update public.opd_sessions set status='open',current_token=coalesce(next_token,s.current_token),
-      current_started_at=case when next_token is null then null else now() end where id=s.id;
+      current_started_at=case when next_token is null then null else clock_timestamp() end,
+      revised_start_at=null where id=s.id;
   else raise exception 'Unknown queue action.';
   end case;
   return public.banr_provider_queue(s.id)||jsonb_build_object('walkin',walkin_result);
