@@ -325,12 +325,20 @@ function token(){
  (minutes!=null&&b.status!=="serving"&&b.current<b.token?'<p><strong>'+ahead+'</strong> patients ahead</p><p>Estimated wait <strong>'+minutes+' min</strong><br>Suggested arrival <strong>'+formatTime(Date.now()+Math.max(0,minutes-5)*60000)+'</strong></p>':'')+
  (live?(queueError?'<p role="alert" class="notice">'+esc(queueError)+'</p>':''):btn("Advance Demo Queue","advance:"+b.id,"link"))+'</section>';
 }
+function appointmentQueueStatus(b){
+ if(b.opd_status==="paused")return "OPD paused";
+ if(b.opd_status==="late")return "Doctor running late"+(b.revised_start_at?" · Revised start "+formatTime(b.revised_start_at):"");
+ if(b.opd_status==="scheduled")return "OPD hasn’t started yet";
+ if(b.status==="serving")return "Your turn now · 0 min wait";
+ const {minutes}=waitEstimate(b);
+ return minutes==null?"Waiting":"Estimated wait · "+minutes+" min";
+}
 function appointmentPage(){
  const list=appointments().filter(b=>active(b)===(historyTab==="upcoming"));
  return pageTitle("Appointments")+'<div class="chips">'+["upcoming","past"].map(tab=>'<button class="chip" data-action="history:'+tab+'" aria-pressed="'+(historyTab===tab)+'">'+(tab==="upcoming"?"Upcoming":"Past")+'</button>').join("")+'</div>'+
  (accountError?'<p class="notice" role="alert">'+esc(accountError)+'</p>':'')+
  (list.length?list.map(b=>'<article class="panel raised stack"><h2>'+esc(b.doctor)+'</h2><p>'+esc(b.facilityName)+' · '+prettyDay(b.date)+' · '+b.sessionName+'</p><p class="tag">Token '+tokenLabel(b.token)+'</p>'+(
- active(b)?btn("Track Token","track:"+b.id):'<p>'+({completed:"Completed",no_show:"No Show",cancelled:"Cancelled"}[b.status]||"Session ended")+'</p>')+'</article>').join(""):'<div class="panel raised stack"><p>No '+historyTab+' appointments.</p>'+(!signedIn()&&live?btn(loginLabel,"login:appointments"):btn("Find a Doctor","nav:home"))+'</div>');
+ active(b)?(live?'<p>'+esc(appointmentQueueStatus(b))+'</p>':'')+btn("Track Token","track:"+b.id):'<p>'+({completed:"Completed",no_show:"No Show",cancelled:"Cancelled"}[b.status]||"Session ended")+'</p>')+'</article>').join(""):'<div class="panel raised stack"><p>No '+historyTab+' appointments.</p>'+(!signedIn()&&live?btn(loginLabel,"login:appointments"):btn("Find a Doctor","nav:home"))+'</div>');
 }
 function account(){
  return pageTitle("Account")+(accountError?'<p role="alert" class="notice">'+esc(accountError)+'</p>':'')+(signedIn()?'<form class="panel raised stack" data-form="profile">'+profileFields()+'<p class="err" id="form-error" role="alert"></p><button class="primary" type="submit">Save Profile</button>'+btn("Sign Out","signout","link")+'</form>':
