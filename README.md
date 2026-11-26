@@ -14,7 +14,9 @@ Use Node.js 22.12+ and run `npm ci` followed by `npm run dev`. Without Supabase 
 4. Add the actual facilities, doctors and OPD sessions to the new database. Facility location selection filters the catalog by area or address.
 5. Run `npm run build` for the Vercel deployment. Set the same public environment variables in Vercel and use `dist` as the output directory.
 
-A facility QR can point to `/?facility=<facility-id>`. Walk-in lookup requires a verified mobile number. Email sign-in supports online bookings and their tokens. The patient app reads queue state every five seconds on the tracking screen. A staff workflow must eventually supply walk-in records and queue changes.
+A facility QR can point to `/?facility=<facility-id>`. Walk-in lookup requires a verified mobile number. Email sign-in supports online bookings and their tokens. The patient app reads queue state every five seconds on the tracking screen. Staff register walk-ins and update the queue in the provider portal.
+
+For live QR walk-in tracking, configure the Phone provider and SMS delivery in Supabase Auth, then set `VITE_WALK_IN_SMS_ENABLED=true` for the patient build. Signed-in patients verify their number on the existing account. Signed-out patients use SMS sign-in. Enable the flag only after the SMS service is configured.
 
 ## Patient content
 
