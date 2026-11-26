@@ -1,6 +1,6 @@
 import { currentLocality, searchLocations } from "./location-selector.js";
 import { supportEmail, refundTerms, promotions, expertAnswers, helpFAQs, privacySections } from "./patient-content.js";
-import { backend, live } from "./backend.js";
+import { backend, live, walkInSms } from "./backend.js";
 const icons={
  home:'<path d="m3 10 9-7 9 7v10h-6v-7H9v7H3z"/>',
  ticket:'<path d="M3 5h18v4a3 3 0 0 0 0 6v4H3v-4a3 3 0 0 0 0-6z"/><path d="M14 8h.01m0 4h.01m0 4h.01"/>',
@@ -267,7 +267,8 @@ async function openSchedule(){
  }
 }
 function login(){
- if(live)return pageTitle("Email Login")+
+ const liveWalkIn=walkInSms&&authReturn==="walkin";
+ if(live&&!liveWalkIn)return pageTitle("Email Login")+
  '<form class="panel raised stack" data-form="email-login">'+
  '<label class="field">Email<input type="email" name="email" autocomplete="email" required></label>'+
  '<label class="field">Password<input type="password" name="password" autocomplete="current-password" required></label>'+
@@ -349,7 +350,7 @@ function walkin(){
  const f=facilities.find(f=>f.id===walkInFacility);
  const found=walkins();
  return pageTitle("Walk-in Tracking")+'<div class="panel raised stack"><h2>'+esc(f?.name||"Facility")+'</h2>'+(f?btn("View Doctors &amp; Book","facility:"+f.id):'')+
- (live&&!phone?'<p>Walk-in tokens require a verified mobile number. Online bookings are available with email sign-in.</p>'+btn("Find a Doctor","nav:home"):found.length?found.map(b=>btn(esc(b.doctor)+" · "+tokenLabel(b.token),"track:"+b.id)).join(""):phone?
+ (live&&!walkInSms&&!phone?'<p>Walk-in tokens require a verified mobile number. Online bookings are available with email sign-in.</p>'+btn("Find a Doctor","nav:home"):found.length?found.map(b=>btn(esc(b.doctor)+" · "+tokenLabel(b.token),"track:"+b.id)).join(""):phone?
  '<p>No active walk-in appointment found for this number.</p>'+btn("Try Another Number","login:walkin"):
  '<p>Verify the mobile number you gave at reception to open your token.</p>'+btn("Verify Mobile Number","login:walkin"))+'</div>';
 }
@@ -518,7 +519,7 @@ async function setAccount(nextUser){
  const number=nextUser?.phone?.replace(/^\+?91(?=\d{10}$)/,"");
  if(!nextUser){clearAccount();return;}
  if(user?.id!==nextUser.id)clearAccount();
- user=nextUser;phone=/^\d{10}$/.test(number??"")?number:"";
+ user=nextUser;phone=nextUser.phone_confirmed_at&&/^\d{10}$/.test(number??"")?number:"";
  const [details]=await Promise.all([backend.profile(),refreshAppointments()]);
  if(user?.id===nextUser.id){profile=details?{...details,phone}:null;accountError="";}
 }
@@ -529,6 +530,23 @@ async function submitLive(type,details,form,action){
  const error=form.querySelector("#form-error");
  error.textContent="";
  try{
+  if(type==="otp"&&walkInSms&&authReturn==="walkin"){
+   if(!pendingPhone){
+    if(!/^\d{10}$/.test(details.phone))throw new Error("Enter a 10-digit mobile number.");
+    await backend.sendWalkInCode("+91"+details.phone,Boolean(user));
+    pendingPhone=details.phone;
+    render();
+    screen.querySelector("[name=otp]").focus();
+    return;
+   }
+   await backend.verifyWalkInCode("+91"+pendingPhone,details.otp,Boolean(user));
+   await setAccount(await backend.currentUser());
+   pendingPhone="";
+   const found=walkins();
+   if(found.length===1){activeBooking=found[0];go("token",true);}
+   else go("walkin",true);
+   return;
+  }
   if(type==="email-login"){
    const status=form.querySelector("#form-status");
    status.textContent="";
