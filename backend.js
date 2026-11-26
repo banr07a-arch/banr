@@ -7,6 +7,7 @@ if (key && !key.startsWith("sb_publishable_")) throw new Error("Use a Supabase p
 
 const client = url ? createClient(url, key) : null;
 export const live = Boolean(client);
+export const walkInSms = live && import.meta.env.VITE_WALK_IN_SMS_ENABLED === "true";
 
 async function data(request) {
   const result = await request;
@@ -23,6 +24,12 @@ export const backend = {
   signIn: (email, password) => data(client.auth.signInWithPassword({ email, password })),
   signUp: (email, password) => data(client.auth.signUp({
     email, password, options: { emailRedirectTo: window.location.origin },
+  })),
+  sendWalkInCode: (phone, signedIn) => signedIn
+    ? data(client.auth.updateUser({ phone }))
+    : data(client.auth.signInWithOtp({ phone })),
+  verifyWalkInCode: (phone, token, signedIn) => data(client.auth.verifyOtp({
+    phone, token, type: signedIn ? "phone_change" : "sms",
   })),
   signOut: () => data(client.auth.signOut()),
   facilities: () => data(client.from("facilities").select("*,doctors(*)").order("name")),
