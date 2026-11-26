@@ -3,7 +3,9 @@ import { patientDefaults, providerDefaults, contentWithDefaults, httpsUrl } from
 
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const client = url && key ? createClient(url, key, { auth: { storageKey: "banr-admin-auth" } }) : null;
+const client = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }) : null;
+const sessionKey = "banr-admin-session";
+let token = sessionStorage.getItem(sessionKey) || "";
 const screen = document.querySelector("#screen");
 const error = document.querySelector("#error");
 const status = document.querySelector("#status");
@@ -81,21 +83,24 @@ async function data(request) {
   if (result.error) throw result.error;
   return result.data;
 }
-const admin = (p_action, p_data = {}) => data(client.rpc("banr_admin", { p_action, p_data }));
+const admin = (p_action, p_data = {}) => data(client.rpc("banr_admin_session", { p_token: token, p_action, p_data }));
 
-function login() {
+function login(setup = false) {
   signOut.hidden = true;
-  screen.innerHTML = '<form class="panel raised stack" data-form="login"><h2>Super Admin Sign In</h2>' +
+  screen.innerHTML = '<form class="panel raised stack" data-form="login"><h2>' + (setup ? 'Set Super Admin Password' : 'Super Admin Sign In') + '</h2>' +
     '<label class="field">Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false"></label>' +
     '<label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>' +
-    button("Sign In", "submit") + '</form>';
+    (setup ? '<label class="field">Setup code<input name="setup" autocomplete="off" required></label><p>Use a password with at least 12 characters.</p>' : '') +
+    button(setup ? "Set Password" : "Sign In", "submit") +
+    (setup ? '<button type="button" data-login-mode>Back to sign in</button>' :
+      '<button type="button" data-login-mode="setup">First-time setup</button>') + '</form>';
 }
 
 async function dashboard() {
   signOut.hidden = false;
   const settings = await admin("load");
   const content = await Promise.all(Object.keys(defaults).map(async key =>
-    contentWithDefaults(defaults[key], await data(client.rpc("banr_app_content", { p_key: key })))));
+    contentWithDefaults(defaults[key], await admin("content", { key }))));
   const [patient, provider] = content;
   screen.innerHTML = '<form class="panel raised stack" data-form="patient"><h2>Patient App</h2>' +
     input("Header subtitle", "subtitle", patient.subtitle) + input("Support email", "supportEmail", patient.supportEmail, "email") +
@@ -132,6 +137,8 @@ async function run(action) {
 }
 
 screen.addEventListener("click", event => {
+  const mode = event.target.closest("[data-login-mode]");
+  if (mode) { error.textContent = ""; login(mode.dataset.loginMode === "setup"); return; }
   const target = event.target.closest("[data-add],[data-remove],[data-move]");
   if (!target) return;
   if (target.hasAttribute("data-add")) {
@@ -156,12 +163,13 @@ screen.addEventListener("submit", event => {
     if (key === "login") {
       const username = raw.username.trim().toLowerCase();
       if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(username)) throw new Error("Enter a valid username.");
-      const email = username + "@admin.banr.invalid";
-      try { await data(client.auth.signInWithPassword({ email, password: raw.password })); }
-      catch (failure) {
-        if (failure.code === "invalid_credentials") throw new Error("Username or password is incorrect.");
-        throw failure;
-      }
+      const length = new TextEncoder().encode(raw.password).length;
+      if (length < 12 || length > 72) throw new Error("Use a password between 12 and 72 bytes.");
+      token = await data(client.rpc("banr_admin_credentials", {
+        p_username: username, p_password: raw.password, p_setup: raw.setup?.trim() || null,
+      }));
+      if (!token) throw new Error("Sign-in failed. Check your details and try again later.");
+      sessionStorage.setItem(sessionKey, token);
       screen.replaceChildren();
       await dashboard();
       return;
@@ -192,12 +200,18 @@ screen.addEventListener("submit", event => {
 });
 
 signOut.addEventListener("click", () => void run(async () => {
-  await data(client.auth.signOut({ scope: "local" }));
-  login();
+  try { await admin("signout"); }
+  finally { token = ""; sessionStorage.removeItem(sessionKey); login(); }
 }));
 
 if (!client) error.textContent = "Connect BANR to Supabase to use Super Admin.";
 else void run(async () => {
-  const { session } = await data(client.auth.getSession());
-  if (session) await dashboard(); else login();
+  if (!token) { login(); return; }
+  try { await dashboard(); }
+  catch (failure) {
+    if (failure.code !== "42501") throw failure;
+    token = "";
+    sessionStorage.removeItem(sessionKey);
+    login();
+  }
 });
