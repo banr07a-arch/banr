@@ -123,8 +123,7 @@ function settings() {
       ? '<form class="panel raised stack" data-form="session"><h2>Edit Selected OPD</h2>' +
         `<input type="hidden" name="session_id" value="${escape(session.id)}">` + scheduleFields(session) +
         '<button class="primary">Save Session</button></form>' : '') +
-    '<section class="panel raised stack"><h2>Facility QR</h2><canvas id="facility-qr" aria-label="Facility QR code"></canvas>' +
-    '<a id="facility-link">Open patient link</a><a id="download-qr" download="banr-facility-qr.png">Download QR</a></section>';
+    '<section class="panel raised stack"><h2>Facility QR</h2>' + facilityQr() + '</section>';
 }
 
 function doctorFields(doctor = {}) {
@@ -133,6 +132,26 @@ function doctorFields(doctor = {}) {
     field("Consultation fee (₹)", "fee", doctor.fee, 'type="number" min="0" required') +
     field("Average consultation (minutes)", "consultation_minutes", doctor.consultation_minutes ?? 10,
       'type="number" min="1" max="180" required');
+}
+
+function facilityQr() {
+  return '<div class="stack" data-facility-qr><canvas aria-label="Facility QR code"></canvas>' +
+    '<a data-patient-link>Open patient link</a><a data-download-qr download="banr-facility-qr.png" hidden>Download QR</a></div>';
+}
+
+function populateFacilityQr(panel) {
+  if (!panel) return;
+  const link = new URL("/", location.origin);
+  link.searchParams.set("facility", facilityId);
+  panel.querySelector("[data-patient-link]").href = link.href;
+  const canvas = panel.querySelector("canvas");
+  const download = panel.querySelector("[data-download-qr]");
+  QRCode.toCanvas(canvas, link.href, { width: 190 }).then(() => {
+    download.href = canvas.toDataURL();
+    download.hidden = false;
+  }).catch(() => {
+    if (panel.isConnected) error.textContent = "Could not generate the facility QR.";
+  });
 }
 
 function liveOpd() {
@@ -148,7 +167,8 @@ function liveOpd() {
     '<label class="field">Sex<select name="sex" required><option value="">Select</option><option>Female</option><option>Male</option>' +
     '<option>Intersex</option><option>Prefer not to say</option></select></label>' +
     field("Age", "age", "", 'type="number" min="0" max="120" required') +
-    '<button class="primary">Add Walk-in</button></form>';
+    '<button class="primary">Add Walk-in</button>' +
+    '<details style="grid-column:1/-1"><summary>Patient tracking QR</summary>' + facilityQr() + '</details></form>';
 }
 
 let queue = null;
@@ -202,16 +222,8 @@ function render() {
     (tab === "settings" ? settings() : liveOpd());
   if (tab === "opd") {
     void refreshQueue().catch(failure => { error.textContent = failure.message; });
-  } else {
-    const link = new URL("/", location.origin);
-    link.searchParams.set("facility", facilityId);
-    screen.querySelector("#facility-link").href = link.href;
-    const canvas = screen.querySelector("#facility-qr");
-    const download = screen.querySelector("#download-qr");
-    QRCode.toCanvas(canvas, link.href, { width: 190 }).then(() => {
-      download.href = canvas.toDataURL();
-    }).catch(() => { error.textContent = "Could not generate the facility QR."; });
   }
+  populateFacilityQr(screen.querySelector("[data-facility-qr]"));
 }
 
 async function queueAction(action, data = {}) {
@@ -222,7 +234,7 @@ async function queueAction(action, data = {}) {
   }));
   showQueue(next);
   if (next.walkin) {
-    notice.textContent = `Token #${next.walkin.token} · ` + (next.walkin.wait_minutes == null
+    notice.textContent = `Token #${next.walkin.token} · ${next.walkin.waiting_ahead} waiting ahead · ` + (next.walkin.wait_minutes == null
       ? "Wait estimate unavailable" : `Estimated wait ${next.walkin.wait_minutes} min`);
   }
 }
