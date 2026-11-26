@@ -86,7 +86,7 @@ const admin = (p_action, p_data = {}) => data(client.rpc("banr_admin", { p_actio
 function login() {
   signOut.hidden = true;
   screen.innerHTML = '<form class="panel raised stack" data-form="login"><h2>Super Admin Sign In</h2>' +
-    '<label class="field">Username<input name="username" autocomplete="username" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{2,31}" autocapitalize="none" spellcheck="false"></label>' +
+    '<label class="field">Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false"></label>' +
     '<label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>' +
     button("Sign In", "submit") + '</form>';
 }
