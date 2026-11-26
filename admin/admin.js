@@ -86,7 +86,9 @@ const admin = (p_action, p_data = {}) => data(client.rpc("banr_admin", { p_actio
 function login() {
   signOut.hidden = true;
   screen.innerHTML = '<form class="panel raised stack" data-form="login"><h2>Super Admin Sign In</h2>' +
-    input("Email", "email", "", "email") + input("Password", "password", "", "password") + button("Sign In", "submit") + '</form>';
+    '<label class="field">Username<input name="username" autocomplete="username" required pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{2,31}" autocapitalize="none" spellcheck="false"></label>' +
+    '<label class="field">Password<input name="password" type="password" autocomplete="current-password" required></label>' +
+    button("Sign In", "submit") + '</form>';
 }
 
 async function dashboard() {
@@ -152,7 +154,14 @@ screen.addEventListener("submit", event => {
     const key = form.dataset.form;
     const raw = Object.fromEntries(new FormData(form));
     if (key === "login") {
-      await data(client.auth.signInWithPassword({ email: raw.email.trim(), password: raw.password }));
+      const username = raw.username.trim().toLowerCase();
+      if (!/^[a-z0-9][a-z0-9_-]{2,31}$/.test(username)) throw new Error("Enter a valid username.");
+      const email = username + "@admin.banr.invalid";
+      try { await data(client.auth.signInWithPassword({ email, password: raw.password })); }
+      catch (failure) {
+        if (failure.code === "invalid_credentials") throw new Error("Username or password is incorrect.");
+        throw failure;
+      }
       screen.replaceChildren();
       await dashboard();
       return;
