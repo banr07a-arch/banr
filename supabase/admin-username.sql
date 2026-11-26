@@ -77,14 +77,14 @@ $$;
 revoke execute on function banr_private.username_admin_action(text,jsonb) from public, anon, authenticated;
 
 create or replace function public.banr_admin(p_action text,p_data jsonb default '{}'::jsonb)
-returns jsonb language plpgsql security definer set search_path='' as $
+returns jsonb language plpgsql security definer set search_path='' as $$
 begin
   if not exists(select 1 from banr_private.super_admins where user_id=auth.uid()) then
     raise exception 'Super Admin access required.' using errcode='42501';
   end if;
   return banr_private.username_admin_action(p_action,p_data);
 end;
-$;
+$$;
 
 create function public.banr_admin_credentials(p_username text,p_password text,p_setup text default null)
 returns text language plpgsql security definer set search_path='' as $$
