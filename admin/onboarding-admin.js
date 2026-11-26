@@ -1,4 +1,4 @@
-import { connection, screen, err, status, escape, input, area, button, option, data, edge } from "./common.js";
+import { connection, screen, err, status, escape, input, area, button, option, data, edge } from "../onboarding/common.js";
 
 let client;
 const session=()=>sessionStorage.getItem("banr-admin-session");
