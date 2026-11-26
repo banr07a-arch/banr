@@ -1,3 +1,4 @@
+import { currentSection, showAdminSection, hideAdminNavigation } from "./admin-layout.js";
 import { createClient } from "@supabase/supabase-js";
 import { patientDefaults, providerDefaults, contentWithDefaults, httpsUrl } from "../managed-content.js";
 
@@ -86,6 +87,7 @@ async function data(request) {
 const admin = (p_action, p_data = {}) => data(client.rpc("banr_admin_session", { p_token: token, p_action, p_data }));
 
 function login(setup = false) {
+  hideAdminNavigation();
   signOut.hidden = true;
   screen.innerHTML = '<form class="panel raised stack" data-form="login"><h2>' + (setup ? 'Set Super Admin Password' : 'Super Admin Sign In') + '</h2>' +
     '<label class="field">Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false"></label>' +
@@ -97,15 +99,14 @@ function login(setup = false) {
 }
 
 async function dashboard() {
-  signOut.hidden = false;
   const settings = await admin("load");
   const content = await Promise.all(Object.keys(defaults).map(async key =>
     contentWithDefaults(defaults[key], await admin("content", { key }))));
   const [patient, provider] = content;
-  screen.innerHTML = '<nav class="panel raised"><a href="onboarding.html">Provider Requests, Plans and Notifications</a></nav>' +
-    '<form class="panel raised stack" data-form="patient"><h2>Patient App</h2>' +
-    input("Header subtitle", "subtitle", patient.subtitle) + input("Support email", "supportEmail", patient.supportEmail, "email") +
-    Object.keys(groups).map(key => group(key, patient[key])).join("") +
+  screen.innerHTML = '<form class="panel raised stack" data-form="patient"><h2>Patient App</h2>' +
+    '<div class="admin-grid">' + input("Header subtitle", "subtitle", patient.subtitle) +
+    input("Support email", "supportEmail", patient.supportEmail, "email") + '</div>' +
+    '<div class="admin-grid">' + Object.keys(groups).map(key => group(key, patient[key])).join("") + '</div>' +
     '<p>Only published Expert Q&A entries are sent to the public app. Keep drafts out of this form.</p>' +
     button("Publish Patient Content", "submit") + '</form>' +
     '<form class="panel raised stack" data-form="provider"><h2>Provider Portal</h2>' +
@@ -119,7 +120,19 @@ async function dashboard() {
     '<div><button class="primary" value="grant_staff">Grant Access</button> <button value="revoke_staff">Remove Access</button></div>' +
     '<div data-staff-list class="stack"></div></form>';
   showStaff(settings.staff);
+  signOut.hidden = false;
+  syncSection();
 }
+function syncSection() {
+  if (!screen.querySelector('[data-form="patient"]')) return;
+  const selected = currentSection(["patient", "provider", "staff"], "patient");
+  showAdminSection(selected);
+  for (const form of screen.querySelectorAll("form[data-form]")) form.hidden = form.dataset.form !== selected;
+}
+window.addEventListener("hashchange", () => {
+  syncSection();
+  document.querySelector("#page-title").focus();
+});
 
 function showStaff(staff) {
   screen.querySelector("[data-staff-list]").innerHTML = staff.length

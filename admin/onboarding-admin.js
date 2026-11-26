@@ -1,3 +1,4 @@
+import { currentSection, showAdminSection, hideAdminNavigation } from "./admin-layout.js";
 import { connection, screen, err, status, escape, input, area, button, option, data, edge } from "../onboarding/common.js";
 
 let client;
@@ -5,7 +6,9 @@ const session=()=>sessionStorage.getItem("banr-admin-session");
 const admin=(p_action,p_data={})=>data(client.rpc("banr_onboarding_admin",{p_token:session(),p_action,p_data}));
 const stages=["Requested","Link Sent","Link Opened","Registered","Email Verified","Profile Completed","Pending Approval","Approved","Rejected"];
 const date=value=>value?new Date(value).toLocaleString():"";
-let query={search:"",status:"",mode:"",offset:0}, section="requests";
+let query={search:"",status:"",mode:"",offset:0};
+const signOut=document.querySelector("#sign-out");
+const section=()=>currentSection(["requests","plans","templates"],"requests");
 const panel=body=>'<section class="panel raised stack">'+body+'</section>';
 const action=(label,name,id)=>button(label,'type="button" data-action="'+name+'" data-id="'+escape(id)+'"');
 function requestCard(r) {
@@ -38,16 +41,13 @@ function templateCard(t) {
     input("Email subject","subject",t.subject,"required maxlength=200")+
     area("Message text","body",t.body,"required maxlength=10000")+button("Save Template",'type="submit"')+'</form>';
 }
-function navigation() {
-  return '<div class="actions">'+[["requests","Provider Requests"],["plans","Subscription Plans"],["templates","Notification Templates"]]
-    .map(([key,label])=>button(label,'type="button" data-section="'+key+'" aria-pressed="'+(section===key)+'"')).join("")+'</div>';
-}
 async function draw() {
   const result=await admin("dashboard",query);
+  const selected=section();
   let body;
-  if (section==="plans") body=planCard()+result.plans.map(planCard).join("");
-  else if (section==="templates") body=panel('<p>Available placeholders: {{contact}}, {{facility}}, {{mode}}, {{link}}, {{verification_link}}, {{portal}}, {{reason}}.</p>')+
-    result.templates.map(templateCard).join("");
+  if (selected==="plans") body='<div class="admin-grid">'+planCard()+result.plans.map(planCard).join("")+'</div>';
+  else if (selected==="templates") body=panel('<p>Available placeholders: {{contact}}, {{facility}}, {{mode}}, {{link}}, {{verification_link}}, {{portal}}, {{reason}}.</p>')+
+    '<div class="admin-grid">'+result.templates.map(templateCard).join("")+'</div>';
   else body='<form data-form="filters" class="panel raised stack"><h2>Provider Requests</h2>'+
     input("Search by name, phone or email","search",query.search,"type=search maxlength=150")+
     '<div class="split"><label class="field">Status<select name="status">'+option("","All statuses",query.status)+
@@ -58,7 +58,9 @@ async function draw() {
     (result.requests.length?result.requests.map(requestCard).join(""):panel("<p>No requests match your filters.</p>"))+
     '<div class="actions">'+(query.offset?action("Previous","previous",""):"")+
     (result.requests.length===100?action("Next","next",""):"")+'</div>';
-  screen.innerHTML=navigation()+body;
+  screen.innerHTML=body;
+  signOut.hidden=false;
+  showAdminSection(selected);
 }
 function reviewMarkup(id,r) {
   const profile=r.profile;
@@ -87,18 +89,21 @@ async function run(action) {
   try { await action(); }
   catch(failure) {
     err.textContent=failure.message||"Action could not be completed.";
-    if (failure.code==="42501") screen.innerHTML='<p><a href="../admin/">Sign in to Super Admin</a></p>';
+    if (failure.code==="42501") {
+      hideAdminNavigation();
+      signOut.hidden=true;
+      screen.innerHTML='<p><a href="../admin/">Sign in to Super Admin</a></p>';
+    }
   } finally { busy=false; }
 }
 async function send(id) {
   await edge(client,{action:"deliver",id,session:session()}).catch(()=>{});
 }
 screen.addEventListener("click",event=>{
-  const control=event.target.closest("[data-action],[data-section]");
+  const control=event.target.closest("[data-action]");
   if (!control) return;
   void run(async()=>{
-    const {action:name,id,section:next}=control.dataset;
-    if (next) {section=next;await draw();return;}
+    const {action:name,id}=control.dataset;
     if (name==="review") {
       const r=await admin("request",{id});
       control.closest("article").querySelector("[data-review]").innerHTML=reviewMarkup(id,r);
@@ -144,6 +149,20 @@ screen.addEventListener("submit",event=>{
     await draw();status.textContent="Saved.";
   });
 });
+window.addEventListener("hashchange", () => {
+  if (session()) void run(async () => {
+    await draw();
+    document.querySelector("#page-title").focus();
+  });
+});
+signOut.addEventListener("click", () => void run(async () => {
+  try {
+    await data(client.rpc("banr_admin_session",{p_token:session(),p_action:"signout",p_data:{}}));
+  } finally {
+    sessionStorage.removeItem("banr-admin-session");
+    location.assign("./");
+  }
+}));
 screen.textContent="Loading…";
 void run(async()=>{
   client=connection({auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
