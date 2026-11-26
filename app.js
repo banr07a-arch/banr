@@ -207,10 +207,13 @@ function about(){
  return pageTitle("About BANR")+'<section class="panel raised stack">'+
  content.about.map(copy=>'<p>'+esc(copy)+'</p>').join("")+'</section>';
 }
+function joinProvider(){
+ return '<a class="panel raised stack" href="/onboarding/"><strong>Join as a Provider</strong><span>Register your clinic or hospital on BNR</span></a>';
+}
 function home(){
  return '<div class="intro row"><h1 tabindex="-1">Home</h1>'+btn(icon("pin")+esc(locationName)+icon("down"),"location","place raised")+'</div>'+
  '<label class="search raised">'+icon("search")+'<input id="search" type="search" aria-label="Search doctors, clinics and hospitals" value="'+esc(query)+'" placeholder="Search doctors, clinics, hospitals…"></label>'+
- homeBanners()+
+ homeBanners()+joinProvider()+
  '<div class="sectionhead"><h2>Find Doctor by Specialist</h2>'+btn("View All","specialties","link")+'</div>'+
  '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynae","user","Gynae"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
  '<div id="results">'+results()+'</div>'+expertHome()+(live?'':demo);
@@ -355,7 +358,7 @@ function appointmentPage(){
 function account(){
  return pageTitle("Account")+(accountError?'<p role="alert" class="notice">'+esc(accountError)+'</p>':'')+(signedIn()?'<form class="panel raised stack" data-form="profile">'+profileFields()+'<p class="err" id="form-error" role="alert"></p><button class="primary" type="submit">Save Profile</button>'+btn("Sign Out","signout","link")+'</form>':
  '<div class="panel raised stack"><p>Sign in to manage your patient profile and bookings.</p>'+btn(loginLabel,"login:account")+'</div>')+
- '<section class="panel raised stack" aria-label="Account resources">'+resourcePages.map(([id,label])=>btn(label,id,"chip")).join("")+'</section>';
+ joinProvider()+'<section class="panel raised stack" aria-label="Account resources">'+resourcePages.map(([id,label])=>btn(label,id,"chip")).join("")+'</section>';
 }
 function walkin(){
  const f=facilities.find(f=>f.id===walkInFacility);

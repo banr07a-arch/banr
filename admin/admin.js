@@ -102,7 +102,8 @@ async function dashboard() {
   const content = await Promise.all(Object.keys(defaults).map(async key =>
     contentWithDefaults(defaults[key], await admin("content", { key }))));
   const [patient, provider] = content;
-  screen.innerHTML = '<form class="panel raised stack" data-form="patient"><h2>Patient App</h2>' +
+  screen.innerHTML = '<nav class="panel raised"><a href="onboarding.html">Provider Requests, Plans and Notifications</a></nav>' +
+    '<form class="panel raised stack" data-form="patient"><h2>Patient App</h2>' +
     input("Header subtitle", "subtitle", patient.subtitle) + input("Support email", "supportEmail", patient.supportEmail, "email") +
     Object.keys(groups).map(key => group(key, patient[key])).join("") +
     '<p>Only published Expert Q&A entries are sent to the public app. Keep drafts out of this form.</p>' +

@@ -1,0 +1,15 @@
+.onboarding{max-width:760px;margin:auto;padding:clamp(12px,4vw,28px)}
+.onboarding header{margin-bottom:20px}.onboarding header h1{margin:10px 0}
+.onboarding a{overflow-wrap:anywhere}.onboarding form,.onboarding section,.onboarding fieldset{min-width:0}
+.onboarding textarea,.onboarding select{width:100%;padding:10px;font:inherit;border-radius:12px}
+.onboarding .segmented{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.onboarding .segmented button[aria-pressed=true]{background:#064b36;color:white}
+.onboarding .segmented button{min-height:48px;padding:8px;border-radius:12px;white-space:normal}
+.onboarding .split{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px}
+.onboarding fieldset{display:grid;gap:10px;padding:12px;border:1px solid #a9c8ba;border-radius:12px}
+.onboarding .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:10px}
+.onboarding .plans article{padding:10px;border:1px solid #a9c8ba;border-radius:12px}
+.onboarding .actions{display:flex;flex-wrap:wrap;gap:8px}
+.onboarding .stuck{border:2px solid #9b5216}
+.onboarding button:disabled{opacity:.6}
+.onboarding .map-pin{width:100%;height:210px;border:0;border-radius:12px}
