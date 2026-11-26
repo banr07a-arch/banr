@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BANR · Live OPD demo</title>
+<style>
+:root{font:16px Inter,Arial,sans-serif;color:#15382b;background:#e8f3ed;--green:#064b36;--surface:#f8fdf9;--line:#c2dbce}
+*{box-sizing:border-box}body{margin:0}main{max-width:1060px;margin:auto;padding:clamp(16px,4vw,44px)}
+header{margin-bottom:22px}h1,h2,h3,p{margin:0}h1{font-size:clamp(1.7rem,4vw,2.5rem);color:var(--green)}
+header p,.muted{color:#426657}header p{margin-top:7px}.views{display:grid;grid-template-columns:1.15fr 1fr;gap:18px;align-items:start}
+.view{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:clamp(14px,3vw,24px);box-shadow:0 10px 24px #064b3612;min-width:0}
+.view h2{font-size:1.2rem;margin-bottom:4px}.clinic{font-size:.9rem;margin-bottom:18px}.status{color:var(--green);font-weight:700;margin:12px 0}
+.numbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.number{padding:12px;border-radius:12px;background:#e3f2e9}.number strong{display:block;color:var(--green);font-size:1.7rem;font-variant-numeric:tabular-nums}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin:15px 0}button{font:inherit;padding:8px 12px;min-height:43px;border:1px solid var(--line);border-radius:10px;background:#e3f2e9;color:var(--green);cursor:pointer}button.primary{background:var(--green);color:white}button:disabled{opacity:.45;cursor:default}button:focus-visible{outline:3px solid #348c6a;outline-offset:2px}
+.queue{display:flex;flex-wrap:wrap;gap:6px;padding:0;margin:8px 0 0;list-style:none}.queue li{padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:.88rem}.queue [data-serving]{background:#d7efe2;border-color:#529577}.queue [data-finished]{color:#4d675d}.summary{margin-top:12px}.summary p{line-height:1.55}.result{min-height:1.4em;color:#426657;font-size:.9rem}
+@media(max-width:700px){.views{grid-template-columns:1fr}}
+</style></head><body>
+<main><header><h1>BANR · Live OPD demo</h1><p>Gufrans Clinic · Dr. Gufran · Sample queue</p></header>
+<div class="views">
+<section class="view" aria-labelledby="provider"><h2 id="provider">Provider Portal</h2><p class="muted clinic">Front desk · Morning OPD</p>
+<div aria-live="polite"><p class="status" id="opd-status"></p><div class="numbers">
+<div class="number">Current token<strong id="staff-token"></strong></div><div class="number">Waiting<strong id="waiting"></strong></div>
+</div></div>
+<div class="controls">
+<button class="primary" id="start">Go Online</button><button class="primary" id="next">Next</button><button id="no-show">No Show</button><button id="pause">Pause</button><button id="add">Add demo walk-in</button>
+</div>
+<p class="result" id="staff-note" role="status"></p><h3>Queue</h3><ul class="queue" id="queue"></ul>
+</section>
+<section class="view" aria-labelledby="patient"><h2 id="patient">Patient · My Token</h2><p class="muted clinic">Gufrans Clinic · Dr. Gufran</p>
+<div aria-live="polite"><p class="status" id="patient-status"></p><div class="numbers">
+<div class="number">Now serving<strong id="patient-current"></strong></div><div class="number">Your token<strong>#3</strong></div></div>
+<div class="summary"><p id="ahead"></p><p id="wait"></p></div></div>
+</section>
+</div></main>
+<script>
+const get = id => document.getElementById(id);
+const queue = ['Waiting', 'Waiting', 'Waiting'];
+let mode = 'scheduled';
+let current = -1;
+let note = '3 bookings before the session starts.';
+function callNext() {
+  current = queue.indexOf('Waiting');
+  if (current !== -1) queue[current] = 'Serving';
+}
+function advance(outcome) {
+  if (current !== -1) {
+    queue[current] = outcome;
+    note = 'Token #' + (current + 1) + ' · ' + outcome;
+  }
+  callNext();
+  render();
+}
+function render() {
+  const active = mode === 'open';
+  const count = queue.filter(status => status === 'Waiting').length;
+  const yourStatus = queue[2];
+  const ahead = queue.slice(0, 2).filter(status => status === 'Waiting' || status === 'Serving').length;
+  const number = current === -1 ? '—' : '#' + (current + 1);
+  get('opd-status').textContent = { scheduled: 'OPD scheduled', open: 'OPD online', paused: 'OPD paused' }[mode];
+  get('staff-token').textContent = number;
+  get('patient-current').textContent = mode === 'paused' ? '—' : number;
+  get('waiting').textContent = count;
+  get('staff-note').textContent = note;
+  get('patient-status').textContent = yourStatus === 'Completed' ? 'Visit completed' : yourStatus === 'No show' ? 'Turn missed' :
+    mode === 'paused' ? 'OPD paused' : mode === 'scheduled' ? 'OPD has not started' : yourStatus === 'Serving' ? 'Your turn now' : 'Waiting for your turn';
+  get('ahead').textContent = yourStatus === 'Waiting' ? ahead + (ahead === 1 ? ' patient ahead' : ' patients ahead') : '';
+  get('wait').textContent = yourStatus === 'Serving' && active ? 'Estimated wait · 0 min' :
+    yourStatus === 'Waiting' && active ? 'Estimated wait · about ' + (ahead * 5) + ' min' :
+    mode === 'paused' && ['Serving','Waiting'].includes(yourStatus) ? 'Wait estimate unavailable until the queue resumes.' : '';
+  get('start').hidden = mode !== 'scheduled';
+  get('next').disabled = !active || (current === -1 && !count);
+  get('no-show').disabled = !active || current === -1;
+  get('pause').disabled = mode === 'scheduled';
+  get('pause').textContent = mode === 'paused' ? 'Resume' : 'Pause';
+  get('add').disabled = mode === 'scheduled' || queue.length >= 10;
+  get('queue').replaceChildren(...queue.map((status, index) => {
+    const item = document.createElement('li');
+    item.textContent = '#' + (index + 1) + ' · ' + status;
+    if (status === 'Serving') item.dataset.serving = '';
+    if (status === 'Completed' || status === 'No show') item.dataset.finished = '';
+    return item;
+  }));
+}
+get('start').onclick = () => { mode = 'open'; note = 'Session started.'; callNext(); render(); };
+get('next').onclick = () => advance('Completed');
+get('no-show').onclick = () => advance('No show');
+get('pause').onclick = () => { mode = mode === 'open' ? 'paused' : 'open'; note = mode === 'open' ? 'Queue resumed.' : 'Queue paused.'; render(); };
+get('add').onclick = () => { queue.push('Waiting'); note = 'Walk-in added · Token #' + queue.length; render(); };
+render();
+</script></body></html>
