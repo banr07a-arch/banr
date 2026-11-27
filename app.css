@@ -98,3 +98,15 @@
 @media (min-width: 660px) {
   .app:has(> #screen) { --patient-background-radius: 29px; }
 }
+
+.app:has(> #screen) {
+  --patient-ink: #151515;
+  --muted: var(--patient-ink);
+  color: var(--patient-ink);
+}
+.app:has(> #screen) :is(.brand, .subtitle, .iconbtn, .search, .search input, .link, .tile, .chev, .number, .notice, .subtle, .field input, .field select, .nav button[aria-current=page]) {
+  color: var(--patient-ink);
+}
+.app:has(> #screen) a { color: var(--patient-ink); }
+.app:has(> #screen) .hero a { color: inherit; }
+.app:has(> #screen) .search input::placeholder { color: var(--patient-ink); opacity: .8; }
