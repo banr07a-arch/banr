@@ -12,15 +12,43 @@ const rpc=(name,args)=>data(client.rpc(name,args));
 const profile=(p_action,p_data={})=>rpc("banr_onboarding_profile",{p_action,p_data});
 const panel=(content)=>'<section class="panel raised stack">'+content+'</section>';
 
+const requestParams=new URLSearchParams(location.search);
+const requestedClaim=requestParams.get("claim")||"";
+const externalClaim=/^osm:(node|way|relation)\/[1-9]\d{0,17}$/.test(requestParams.get("source")||"") ? requestParams.get("source") : "";
+let claimable=[];
+async function loadClaimable(){
+ const result=await data(client.from("facilities").select("id,name,type,area,address").eq("is_demo",false).eq("booking_enabled",false).order("name").limit(200));
+ claimable=result;
+ const select=screen.querySelector('[name="claim_id"]');
+ if(!select)return;
+ select.innerHTML=option("","New facility",requestedClaim)+claimable.map(row=>option(row.id,row.name+" · "+row.area,requestedClaim)).join("");
+ if(select.value) applyClaim(select);
+}
+function applyClaim(select){
+ const found=claimable.find(row=>row.id===select.value);
+ const form=select.form;
+ for(const [field,key] of Object.entries({facility:"name",type:"type",address:"address",area:"area"})){
+  const input=form.elements[field];
+  if(found)input.value=found[key]||"";
+  if(field==="facility")input.readOnly=Boolean(found);
+ }
+}
 function requestForm() {
   screen.innerHTML='<form class="panel raised stack" data-form="request">'+
+    (externalClaim?'<p>Claiming a public OpenStreetMap listing. BANR will verify the match before approval.</p>':'')+
+    '<label class="field">Search an existing facility<input type="search" data-claim-search placeholder="Name or locality"></label>'+
+    '<label class="field">Existing directory listing<select name="claim_id"><option value="">New facility</option></select></label>'+
     input("Facility name","facility","","required minlength=2 maxlength=120 placeholder='Rohan Clinic'")+
-    input("Contact person name","contact","","required minlength=2 maxlength=100")+
+    '<label class="field">Facility type<select name="type" required><option value="">Select type</option><option>Clinic</option><option>Hospital</option></select></label>'+
+    area("Facility address","address","","required maxlength=500")+input("Locality","area","","required maxlength=120")+
+    input("Number of doctors","doctor_count","","type=number min=1 max=100 required")+
+    '<p>Verification documents, map pin and OPD settings are completed during registration.</p>'+
+    input("Owner or authorised representative","contact","","required minlength=2 maxlength=100")+
     input("Contact number","phone","","required type=tel autocomplete=tel maxlength=24 placeholder='+91 9876543210'")+
     input("Email address","email","","required type=email autocomplete=email maxlength=254")+
     '<div class="segmented" role="group" aria-label="Onboarding mode">'+
     '<button type="button" data-mode="self" aria-pressed="true">Self Registration<br><small>I will register myself</small></button>'+
-    '<button type="button" data-mode="assisted" aria-pressed="false">Assisted Onboarding<br><small>BNR team will onboard me</small></button></div>'+
+    '<button type="button" data-mode="assisted" aria-pressed="false">Assisted Onboarding<br><small>BANR team will onboard me</small></button></div>'+
     '<h2>Subscription plans</h2><div data-plans>Loading plans…</div>'+
     button("Send Request",'type="submit"')+'</form>'+
     panel('<a href="?resume=1">Resume a provider registration</a>');
@@ -50,7 +78,7 @@ const fileRows=(key,paths)=>paths.map(path=>'<li>'+escape(path.split("/").slice(
 function renderProfile() {
   if (!["Email Verified","Profile Completed"].includes(record.status)) {
     screen.innerHTML=panel('<h2>'+escape(record.facility)+'</h2><p>'+escape(record.status)+'</p>'+
-      (record.reason?'<p>'+escape(record.reason)+'</p>':"")+(record.status==="Approved"?'<a href="../provider/">Open Provider Portal</a>':"")+
+      (record.reason?'<p>'+escape(record.reason)+'</p>':"")+(record.status==="Approved"?'<p>Verification approved. Set up your OPD sessions in Provider Portal. BANR activates appointment service after setup.</p><a href="../provider/">Open Provider Portal</a>':"")+
       '<button type="button" data-action="logout">Sign Out</button>');
     return;
   }
@@ -134,6 +162,12 @@ async function activate() {
 }
 
 screen.addEventListener("input", event=>{
+  if(event.target.matches("[data-claim-search]")){
+    const select=event.target.form.elements.claim_id, prior=select.value, term=event.target.value.trim().toLowerCase();
+    select.innerHTML=option("","New facility",prior)+claimable.filter(row=>row.id===prior||(row.name+" "+row.area).toLowerCase().includes(term))
+      .map(row=>option(row.id,row.name+" · "+row.area,prior)).join("");
+    return;
+  }
   if(event.target.closest('[data-form="profile"]') && !event.target.dataset.upload) scheduleSave();
 });
 screen.addEventListener("submit", event=>{
@@ -145,7 +179,7 @@ screen.addEventListener("submit", event=>{
       if (!/^\d{10}$|^\+[1-9]\d{10,14}$/.test(number)) throw new Error("Enter a 10-digit mobile number or include the country code.");
       status.textContent="Sending your request…";
       let result;
-      try { result=await edge(client,{action:"submit", ...fields, mode}); }
+      try { result=await edge(client,{action:"submit", ...fields, mode, external_id:fields.claim_id?"":externalClaim}); }
       finally { status.textContent=""; }
       screen.innerHTML=panel('<h2>Request received</h2><p>'+
         (mode==="assisted"?"Our team will contact you shortly.":result.sent?
@@ -176,6 +210,7 @@ screen.addEventListener("submit", event=>{
 
 screen.addEventListener("change",event=>{
   const field=event.target, kind=field.dataset.upload;
+  if(field.name==="claim_id"){applyClaim(field);return;}
   if (!kind || !field.files.length) return;
   void run(async()=>{
     const paths=record.profile[kind]??[];
@@ -266,7 +301,10 @@ async function start() {
       }
     }
     requestForm();
-    try { plans=await rpc("banr_onboarding_plans"); planReady=true; } finally { showPlans(); }
+    await Promise.all([
+      rpc("banr_onboarding_plans").then(rows=>{plans=rows;planReady=true;}).catch(()=>{}).finally(showPlans),
+      loadClaimable().catch(()=>{err.textContent="Existing facilities are temporarily unavailable. You can still submit a new facility.";}),
+    ]);
     return;
   }
   const session=await data(client.auth.getSession());

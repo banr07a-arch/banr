@@ -1,3 +1,4 @@
+import { attribution, distanceKm, openingStatus, nearbyDirectory, combineDirectory } from "./discovery.js";
 import { currentLocality, searchLocations } from "./location-selector.js";
 import { patientDefaults, contentWithDefaults, httpsUrl } from "./managed-content.js";
 let content = patientDefaults;
@@ -59,6 +60,27 @@ const waitEstimate=b=>{
 let page="home",previous=[],selected={},activeBooking=null,authReturn="details",pendingPhone="",query="",category="",historyTab="upcoming";
 const urlParams=new URLSearchParams(location.search);
 let walkInFacility=urlParams.get("facility");
+let discoveryCenter=load("location-center",null);
+if(!discoveryCenter && locationName==="Mumbai")discoveryCenter={latitude:19.076,longitude:72.8777};
+let discoveryRequest, directoryStatus="", externalFacilities=[], storedFacilities=[], openOnly=false, radius=0, sortBy="distance", department="";
+const canBook=f=>Boolean(f&&(!live||(f.booking_enabled&&f.accepts_online&&!f.directory_only)));
+function refreshDiscovery(){
+ if(!live||!discoveryCenter)return;
+ discoveryRequest?.abort();
+ const request=discoveryRequest=new AbortController();
+ directoryStatus="Loading nearby facilities…";
+ const center=discoveryCenter, label=locationName;
+ const update=()=>{const target=screen.querySelector("#results");if(page==="home"&&target)target.innerHTML=results();};
+ update();
+ void nearbyDirectory(center,label,request.signal).then(rows=>{
+  if(request.signal.aborted)return;
+  externalFacilities=rows;
+  facilities=combineDirectory(storedFacilities,rows);
+  directoryStatus="";
+ }).catch(()=>{
+  if(!request.signal.aborted)directoryStatus="Nearby map listings are temporarily unavailable. Showing the BANR directory.";
+ }).finally(()=>{if(!request.signal.aborted)update();});
+}
 const facility=()=>facilities.find(item=>item.id===selected.facility);
 const doctor=()=>facility()?.doctors[selected.doctor];
 const signedIn=()=>live?Boolean(user):Boolean(phone);
@@ -97,24 +119,51 @@ function shell(){
  nav.innerHTML=[["home","home","Home"],["token","ticket","My Token"],["appointments","calendar","Appointments"],["account","user","Account"]].map(([id,img,label])=>
  '<button type="button" data-action="nav:'+id+'" '+(current===id?'aria-current="page"':'')+'>'+icon(img)+label+'</button>').join("");
 }
+function formattedDistance(item){
+ const distance=distanceKm(discoveryCenter,item);
+ return Number.isFinite(distance) ? (distance<1?Math.round(distance*1000)+" m":distance.toFixed(1)+" km")+" away (approx.)" : "";
+}
 function card(item){
- return '<button class="facility raised" data-action="facility:'+item.id+'"><figure>'+image(item.img,"")+'</figure><div><h3>'+esc(item.name)+'</h3><p>'+esc(item.distance||item.area)+' · '+esc(item.hours)+'</p><span class="tag">'+esc(item.directory_only?"Directory listing":item.doctors.map(d=>d.specialty).join(", "))+'</span></div>'+icon("chevron","chev")+'</button>';
+ const specialties=item.specialties||item.doctors.filter(d=>d.available_for_booking!==false).map(d=>d.specialty).join(", ");
+ const photo=httpsUrl(item.photo_url), open=openingStatus(item.structuredHours || item.hours);
+ const summary=[formattedDistance(item)||item.distance||item.area,open===null?item.hours:open?"Open now":"Closed now"].filter(Boolean).join(" · ");
+ return '<button class="facility raised" data-action="facility:'+esc(item.id)+'">'+
+ (photo?'<figure><img src="'+esc(photo)+'" alt="" loading="lazy"></figure>':live?'':'<figure>'+image(item.img,"")+'</figure>')+
+ '<div><h3>'+esc(item.name)+'</h3><p>'+esc(summary)+'</p>'+
+ (canBook(item)?'<span class="tag">Accepting appointments on BANR</span>':'')+
+ (specialties?'<p>'+esc(specialties)+'</p>':'')+'</div>'+icon("chevron","chev")+'</button>';
 }
 function results(){
- if(catalogError)return '<p class="panel raised" role="alert">'+esc(catalogError)+'</p>'+btn("Retry","retry-catalog","link");
- if(live&&!facilities.length)return '<p class="panel raised">No facilities are listed yet.</p>';
  const value=query.trim().toLowerCase();
  const matches=facilities.filter(f=>{
- const haystack=[f.name,f.area,f.type,...f.doctors.flatMap(d=>[d.name,d.specialty])].join(" ").toLowerCase();
- return (!category||haystack.includes(category.toLowerCase()))&&(!value||haystack.includes(value))&&(!live||(f.directory_only&&value)||f.area.toLowerCase().includes(locationName.toLowerCase())||f.address.toLowerCase().includes(locationName.toLowerCase()));
+  const haystack=[f.name,f.area,f.address,f.type,f.specialties,...f.doctors.flatMap(d=>[d.name,d.specialty])].join(" ").toLowerCase().replaceAll("gynae","gyne");
+  const distance=distanceKm(discoveryCenter,f);
+  const nearby=f.external||f.area.toLowerCase().includes(locationName.toLowerCase())||
+   f.address?.toLowerCase().includes(locationName.toLowerCase())||(distance<=10);
+  return (!category||haystack.includes(category.toLowerCase().replaceAll("gynae","gyne")))&&(!value||haystack.includes(value))
+   &&(!live||value||nearby)&&(!radius||distance<=radius)&&(!openOnly||openingStatus(f.structuredHours||f.hours)===true);
  });
- if(value||category) return '<div class="sectionhead"><h2>'+(esc(category)||"Search results")+'</h2>'+btn("Clear","clear","link")+'</div>'+
- (matches.length?matches.map(card).join(""):'<p class="panel raised">No clinics or hospitals match your search.</p>');
- return [["Clinic","Nearest Clinic"],["Hospital","Nearest Hospital"]].map(([type,title])=>
- '<div class="sectionhead"><h2>'+title+'</h2>'+btn("View More","filter:"+type,"link")+'</div>'+(matches.filter(f=>f.type===type).map(card).join("")||'<p class="small">No listings in this area.</p>')).join("");
+ const compareDistance=(a,b)=>distanceKm(discoveryCenter,a)-distanceKm(discoveryCenter,b)||a.name.localeCompare(b.name);
+ const rank=f=>value?(f.name.toLowerCase()===value?0:f.name.toLowerCase().startsWith(value)?1:f.name.toLowerCase().includes(value)?2:3):0;
+ matches.sort((a,b)=>(sortBy==="relevance"?rank(a)-rank(b):0)||compareDistance(a,b));
+ const note=(catalogError?'<p role="alert">'+esc(catalogError)+' '+btn("Retry","retry-catalog","link")+'</p>':'')+
+  (directoryStatus?'<p class="small" role="status">'+esc(directoryStatus)+'</p>':'')+
+  (externalFacilities.length?'<p class="small"><a href="'+attribution+'" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></p>':'');
+ if(value||category||openOnly||radius) return '<div class="sectionhead"><h2>'+(esc(category)||"Search results")+'</h2>'+btn("Clear","clear","link")+'</div>'+
+  (matches.length?matches.map(card).join(""):'<p class="panel raised">No clinics or hospitals match your search.</p>')+note;
+ return [["Clinic","Nearby clinics"],["Hospital","Nearby hospitals"]].map(([type,title])=>
+ '<div class="sectionhead"><h2>'+title+'</h2>'+btn("View More","filter:"+type,"link")+'</div>'+
+ (matches.filter(f=>f.type===type).slice(0,6).map(card).join("")||'<p class="small">No listings found in this area.</p>')).join("")+note;
+}
+function directoryFilters(){
+ if(!live)return "";
+ return '<div class="chips" aria-label="Directory filters">'+btn("Clinics","filter:Clinic","chip")+btn("Hospitals","filter:Hospital","chip")+
+ '<button type="button" class="chip" data-action="open-filter" aria-pressed="'+openOnly+'">Open now</button>'+
+ '<label class="field">Distance<select id="distance-filter">'+[0,2,5,10].map(k=>'<option value="'+k+'" '+(k===radius?"selected":"")+'>'+(k?"Within "+k+" km":"Any distance")+'</option>').join("")+'</select></label>'+
+ '<label class="field">Sort<select id="sort-directory"><option value="distance" '+(sortBy==="distance"?"selected":"")+'>Distance</option><option value="relevance" '+(sortBy==="relevance"?"selected":"")+'>Relevance</option></select></label></div>';
 }
 const resourcePages = [
- ["help","Help Center"], ["privacy","Privacy Policy"], ["refund","Refund Policy"], ["about","About BANR"],
+ ["help","Help Center"], ["support","Contact support"], ["experts","Expert Q&A"], ["privacy","Privacy Policy"], ["refund","Refund Policy"], ["about","About BANR"],
 ];
 let reviewedAnswers;
 function loadReviewedAnswers(){
@@ -217,14 +266,14 @@ function about(){
 function joinProvider(){
  const imageUrl=httpsUrl(content.providerBanner?.imageUrl);
  const artwork=imageUrl?'<img class="provider-join-artwork" src="'+esc(imageUrl)+'" alt="" loading="lazy">':'';
- return '<a class="panel raised stack provider-join" href="/onboarding/">'+artwork+'<strong>Join as a Provider</strong><span>Register your clinic or hospital on BANR</span></a>';
+ return '<a class="panel raised stack provider-join" href="/onboarding/">'+artwork+'<strong>Register Your Facility</strong><span>Enable online appointments, live token tracking and OPD management for your clinic or hospital.</span></a>';
 }
 function home(){
  return '<div class="intro row"><h1 tabindex="-1">Home</h1>'+btn(icon("pin")+esc(locationName)+icon("down"),"location","place raised")+'</div>'+
  '<label class="search raised">'+icon("search")+'<input id="search" type="search" aria-label="Search doctors, clinics and hospitals" value="'+esc(query)+'" placeholder="Search doctors, clinics, hospitals…"></label>'+
- homeBanners()+joinProvider()+
- '<div class="sectionhead"><h2>Find Doctor by Specialist</h2>'+btn("View All","specialties","link")+'</div>'+
- '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynae","user","Gynae"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
+ homeBanners()+joinProvider()+directoryFilters()+
+ '<div class="sectionhead"><h2>Find a doctor by specialty</h2>'+btn("View All","specialties","link")+'</div>'+
+ '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynaecology","user","Gyne"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
  '<div id="results">'+results()+'</div>'+(live?'':demo);
 }
 let facilitySessions=null, facilityStatusRequest=0;
@@ -255,17 +304,34 @@ function doctorOpdStatus(id){
 }
 function detail(){
  const f=facility();
- if(f.directory_only){
-  const map=httpsUrl(f.maps_url);
-  const phone=/^\+?[\d ]{8,17}$/.test(f.contact??"")?f.contact.replaceAll(" ",""):"";
-  return pageTitle(f.name)+'<section class="panel raised stack"><p>'+esc(f.address)+'</p><p>'+esc(f.hours)+'</p>'+
-    (phone?'<a class="link" href="tel:'+esc(phone)+'">Call '+esc(f.contact)+'</a>':'')+
-    (map?'<a class="link" href="'+esc(map)+'" target="_blank" rel="noopener noreferrer">View on Google Maps</a>':'')+
-    '<p class="notice">OPD booking is unavailable on BANR for this clinic.</p></section>';
- }
- const directions=live?'<a class="link" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(f.latitude!=null&&f.longitude!=null?f.latitude+","+f.longitude:f.address)+'">Get Directions</a>':"";
- return pageTitle(f.name)+'<div class="panel raised stack"><div class="photo">'+image(f.img,"")+'</div><p>'+esc(live?f.address:f.area+" · "+f.distance)+'</p><p>'+esc(f.hours)+'</p>'+(f.contact?'<p>Contact: '+esc(f.contact)+'</p>':'')+directions+'</div><h2>Doctors at '+esc(f.name)+'</h2>'+
- f.doctors.map((d,i)=>'<article class="panel raised stack"><h3>'+esc(d.name)+'</h3><p class="subtle">'+esc(d.specialty)+' · ₹'+d.fee+'</p>'+(live?'<p class="tag">'+doctorOpdStatus(d.id)+'</p>':'')+btn("Book Appointment","book:"+i)+'</article>').join("");
+ if(!f)return pageTitle("Facility unavailable");
+ const map=httpsUrl(f.maps_url)||(live?'https://www.google.com/maps/search/?api=1&query='+
+  encodeURIComponent(f.latitude!=null&&f.longitude!=null?f.latitude+","+f.longitude:[f.name,f.address||f.area].join(", ")):"");
+ const website=httpsUrl(f.website), photo=httpsUrl(f.photo_url);
+ const dial=(f.contact??"").replace(/[ .()-]/g,"");
+ const contact=/^\+?\d{8,15}$/.test(dial)?'<a class="link" href="tel:'+esc(dial)+'">Call '+esc(f.contact)+'</a>':'';
+ const hours=openingStatus(f.structuredHours||f.hours);
+ const booking=canBook(f);
+ const core=pageTitle(f.name)+'<section class="panel raised stack">'+
+ (photo?'<div class="photo"><img src="'+esc(photo)+'" alt=""></div>':live?'':'<div class="photo">'+image(f.img,"")+'</div>')+
+ '<p>'+esc(f.address||f.area||"Address unavailable")+'</p>'+(formattedDistance(f)?'<p>'+esc(formattedDistance(f))+'</p>':'')+
+ '<p>'+esc(f.hours||"Opening hours unavailable")+(hours===null?"":hours?" · Open now":" · Closed now")+'</p>'+
+ (f.specialties?'<p>'+esc(f.specialties)+'</p>':'')+contact+
+ (map?'<a class="link" href="'+esc(map)+'" target="_blank" rel="noopener noreferrer">View map and directions</a>':'')+
+ (website?'<a class="link" href="'+esc(website)+'" target="_blank" rel="noopener noreferrer">Website</a>':'')+
+ (f.external?'<a class="small" href="'+esc(f.source_url)+'" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>':'')+
+ (booking?'<p class="tag">Accepting appointments on BANR</p>':
+  '<p class="notice">OPD booking is unavailable on BANR for this facility.</p>'+
+  (!f.booking_enabled?'<a class="link" href="/onboarding/?'+(f.external?'source='+encodeURIComponent(f.external_place_id):'claim='+encodeURIComponent(f.id))+'">Register or claim this facility</a>':''))+
+ '</section>';
+ if(!booking)return core;
+ const specialties=[...new Set(f.doctors.filter(d=>d.available_for_booking!==false).map(d=>d.specialty))];
+ const filter=f.type==="Hospital"&&specialties.length>1?'<label class="field">Department<select id="facility-department">'+
+  '<option value="">All specialties</option>'+specialties.map(s=>'<option '+(department===s?"selected":"")+'>'+esc(s)+'</option>').join("")+'</select></label>':"";
+ return core+'<h2>Doctors at '+esc(f.name)+'</h2>'+filter+
+ f.doctors.map((d,index)=>d.available_for_booking===false||(department&&d.specialty!==department)?"":
+ '<article class="panel raised stack"><h3>'+esc(d.name)+'</h3><p class="subtle">'+esc(d.specialty)+' · '+(d.fee==null?"Fee unavailable":"₹"+esc(d.fee))+'</p>'+
+ (live?'<p class="tag">'+doctorOpdStatus(d.id)+'</p>':'')+btn("Book Appointment","book:"+index)+'</article>').join("");
 }
 function schedule(){
  const dates=live?[...new Set(availableSessions.map(s=>dateKey(s.starts_at)))]:[0,1,2,3].map(dayKey);
@@ -286,7 +352,8 @@ async function openSchedule(){
  go("schedule");
  if(!live)return;
  try{
-  const sessions=await backend.sessions(doctor().id);
+  const lastDay=dayKey(facility().advance_booking_days??7);
+  const sessions=(await backend.sessions(doctor().id)).filter(session=>dateKey(session.starts_at)<=lastDay);
   if(request!==scheduleRequest)return;
   availableSessions=sessions;
   const firstAvailable=sessions.find(available)??sessions[0];
@@ -319,7 +386,8 @@ function profileFields(){
  return '<label class="field">Name<input name="name" autocomplete="name" required maxlength="80" value="'+esc(details.name)+'"></label>'+
  '<label class="field">Age<input name="age" type="number" required min="0" max="120" value="'+esc(details.age)+'"></label>'+
  '<label class="field">Sex<select name="sex" required><option value="">Select</option>'+["Female","Male","Intersex","Prefer not to say"].map(s=>'<option '+(details.sex===s?"selected":"")+'>'+s+'</option>').join("")+'</select></label>'+
- (live?'<label class="field">Email<input value="'+esc(user?.email)+'" readonly></label>':
+ (live?'<label class="field">Mobile number<input name="mobile" type="tel" autocomplete="tel" maxlength="24" '+(page==="details"?"required ":"")+'value="'+esc(details.mobile||(phone?"+91"+phone:""))+'"></label>'+
+ '<label class="field">Email<input value="'+esc(user?.email)+'" readonly></label>':
  '<label class="field">Verified mobile number<input value="+91 '+esc(phone)+'" readonly></label>');
 }
 function details(){
@@ -354,7 +422,7 @@ function token(){
  '<section class="panel raised stack">'+(live?'':'<p class="tag">Demo queue</p>')+'<h2>'+esc(b.doctor)+'</h2><p>'+esc(b.facilityName)+' · '+prettyDay(b.date)+' · '+esc(b.sessionName)+' OPD</p>'+
  '<div class="numbers"><div class="stat"><p>Now Serving</p><div class="number">'+(nowServing==null?"—":tokenLabel(nowServing))+'</div></div><div class="stat"><p>Your Token</p><div class="number">'+tokenLabel(b.token)+'</div></div></div>'+
  (status?'<p><strong>'+status+'</strong></p>':'')+
- (minutes!=null&&b.status!=="serving"&&b.current<b.token?'<p><strong>'+ahead+'</strong> patients ahead</p><p>Estimated wait <strong>'+minutes+' min</strong><br>Suggested arrival <strong>'+formatTime(Date.now()+Math.max(0,minutes-5)*60000)+'</strong></p>':'')+
+ (minutes!=null&&b.status!=="serving"&&b.current<b.token?'<p><strong>'+ahead+'</strong> '+(ahead===1?'patient':'patients')+' ahead</p><p>Estimated wait <strong>'+minutes+' min</strong><br>Suggested arrival <strong>'+formatTime(Date.now()+Math.max(0,minutes-5)*60000)+'</strong></p>':'')+
  (live?(queueError?'<p role="alert" class="notice">'+esc(queueError)+'</p>':''):btn("Advance Demo Queue","advance:"+b.id,"link"))+'</section>';
 }
 function appointmentQueueStatus(b){
@@ -366,11 +434,12 @@ function appointmentQueueStatus(b){
  return minutes==null?"Waiting":"Estimated wait · "+minutes+" min";
 }
 function appointmentPage(){
- const list=appointments().filter(b=>active(b)===(historyTab==="upcoming"));
- return pageTitle("Appointments")+'<div class="chips">'+["upcoming","past"].map(tab=>'<button class="chip" data-action="history:'+tab+'" aria-pressed="'+(historyTab===tab)+'">'+(tab==="upcoming"?"Upcoming":"Past")+'</button>').join("")+'</div>'+
+ const list=appointments().filter(b=>historyTab==="cancelled"?b.status==="cancelled":historyTab==="upcoming"?active(b):!active(b)&&b.status!=="cancelled");
+ return pageTitle("Appointments")+'<div class="chips">'+["upcoming","past","cancelled"].map(tab=>'<button class="chip" data-action="history:'+tab+'" aria-pressed="'+(historyTab===tab)+'">'+(tab==="upcoming"?"Upcoming":"Past")+'</button>').join("")+'</div>'+
  (accountError?'<p class="notice" role="alert">'+esc(accountError)+'</p>':'')+
  (list.length?list.map(b=>'<article class="panel raised stack"><h2>'+esc(b.doctor)+'</h2><p>'+esc(b.facilityName)+' · '+prettyDay(b.date)+' · '+b.sessionName+'</p><p class="tag">Token '+tokenLabel(b.token)+'</p>'+(
- active(b)?(live?'<p>'+esc(appointmentQueueStatus(b))+'</p>':'')+btn("Track Token","track:"+b.id):'<p>'+({completed:"Completed",no_show:"No Show",cancelled:"Cancelled"}[b.status]||"Session ended")+'</p>')+'</article>').join(""):'<div class="panel raised stack"><p>No '+historyTab+' appointments.</p>'+(!signedIn()&&live?btn(loginLabel,"login:appointments"):btn("Find a Doctor","nav:home"))+'</div>');
+ active(b)?(live?'<p>'+esc(appointmentQueueStatus(b))+'</p>':'')+btn("Track Token","track:"+b.id)+
+ (live&&b.source==="online"&&["scheduled","late"].includes(b.opd_status)?btn("Cancel appointment","cancel-booking:"+b.id,"link"):""):'<p>'+({completed:"Completed",no_show:"No Show",cancelled:"Cancelled"}[b.status]||"Session ended")+'</p>')+'</article>').join(""):'<div class="panel raised stack"><p>No '+historyTab+' appointments.</p>'+(!signedIn()&&live?btn(loginLabel,"login:appointments"):btn("Find a Doctor","nav:home"))+'</div>');
 }
 function account(){
  return pageTitle("Account")+(accountError?'<p role="alert" class="notice">'+esc(accountError)+'</p>':'')+(signedIn()?'<form class="panel raised stack" data-form="profile">'+profileFields()+'<p class="err" id="form-error" role="alert"></p><button class="primary" type="submit">Save Profile</button>'+btn("Sign Out","signout","link")+'</form>':
@@ -385,6 +454,13 @@ function walkin(){
  '<p>No active walk-in appointment found for this number.</p>'+btn("Try Another Number","login:walkin"):
  '<p>Verify the mobile number you gave at reception to open your token.</p>'+btn("Verify Mobile Number","login:walkin"))+'</div>';
 }
+function supportPage(){
+ return pageTitle("Contact support")+(signedIn()&&live?'<form class="panel raised stack" data-form="support">'+
+ '<label class="field">Subject<input name="subject" required minlength="3" maxlength="120"></label>'+
+ '<label class="field">Message<textarea name="message" required minlength="10" maxlength="2000" rows="5"></textarea></label>'+
+ '<p id="form-error" role="alert" class="err"></p><button class="primary" type="submit">Send request</button></form>':
+ '<div class="panel raised stack"><p>Sign in to send a support request.</p>'+btn(loginLabel,"login:support")+'</div>');
+}
 function locationPage(){
  return pageTitle("Change Location")+
  '<section class="panel raised stack">'+btn("Use Current Location","use-current-location")+
@@ -393,10 +469,16 @@ function locationPage(){
  '<button class="primary" type="submit">Search</button></form>'+
  '<p class="small" id="location-status" role="status"></p><div class="stack" id="location-results"></div></section>';
 }
-function selectLocation(name){
- locationName=name;
- save("location",name);
+function selectLocation(place){
+ locationName=place.name;
+ discoveryCenter={latitude:place.latitude,longitude:place.longitude};
+ save("location",locationName);
+ save("location-center",discoveryCenter);
+ externalFacilities=[];
+ if(live)facilities=storedFacilities;
+ query="";category="";
  go("home",true);
+ refreshDiscovery();
 }
 let locationRequest=0;
 async function lookupLocation(query){
@@ -408,19 +490,20 @@ async function lookupLocation(query){
  status.textContent=query?"Searching locations…":"Detecting your locality…";
  try{
   if(!query){
-   const name=await currentLocality();
-   if(isCurrent())selectLocation(name);
+   const place=await currentLocality();
+   if(isCurrent())selectLocation(place);
    return;
   }
   const matches=await searchLocations(query);
   if(!isCurrent())return;
   status.textContent=matches.length?"Choose a location.":"No locations found.";
-  for(const {name,context} of matches){
+  for(const place of matches){
+   const {name,context}=place;
    const button=document.createElement("button");
    button.type="button";
    button.className="chip";
    button.textContent=context?name+" · "+context:name;
-   button.addEventListener("click",()=>selectLocation(name));
+   button.addEventListener("click",()=>selectLocation(place));
    results.append(button);
   }
  }catch(error){
@@ -429,7 +512,7 @@ async function lookupLocation(query){
 }
 function render(){
  shell();
- const pages={home,facility:detail,schedule,login,details,confirm,token,appointments:appointmentPage,account,walkin,help,privacy,refund,about,experts,expertAnswer,
+ const pages={home,support:supportPage,facility:detail,schedule,login,details,confirm,token,appointments:appointmentPage,account,walkin,help,privacy,refund,about,experts,expertAnswer,
  location:locationPage,
  notifications:()=>pageTitle("Notifications")+'<p class="panel raised">No new notifications.</p>',
  specialties:()=>pageTitle("Specialties")+'<div class="panel raised stack">'+["General","Physician","Dentist","Gynae","Surgery"].map(s=>btn(s,"filter:"+s,"chip")).join("")+'</div>'};
@@ -443,7 +526,7 @@ document.addEventListener("click",async event=>{
  switch(action){
  case "back":page=previous.pop()??"home";render();scrollTo(0,0);break;
  case "nav":go(value,true);break;
- case "help":case "privacy":case "refund":case "about":case "experts":go(action);break;
+ case "support":case "help":case "privacy":case "refund":case "about":case "experts":go(action);break;
  case "expert-topic":{
   const topics=[...new Set(reviewedAnswers.map(item=>item.topic))].sort();
   expertTopic=["",...topics][Number(value)]??"";
@@ -457,12 +540,19 @@ document.addEventListener("click",async event=>{
   break;
  case "use-current-location":await lookupLocation();break;
  case "location":case "notifications":case "specialties":go(action);break;
- case "clear":category="";query="";render();document.getElementById("search").focus();break;
+ case "open-filter":openOnly=!openOnly;render();break;
+ case "clear":openOnly=false;radius=0;category="";query="";render();document.getElementById("search").focus();break;
  case "filter":category=value;query="";go("home",true);document.getElementById("results").scrollIntoView({block:"center"});break;
- case "facility":selected={facility:value};facilitySessions=null;go("facility");if(live&&!facility()?.directory_only)void refreshFacilitySessions(facility());break;
- case "book":selected={facility:selected.facility,doctor:Number(value),date:dayKey()};await openSchedule();break;
+ case "facility":selected={facility:value};department="";facilitySessions=null;go("facility");if(live&&canBook(facility()))void refreshFacilitySessions(facility());break;
+ case "cancel-booking":
+  if(live&&confirm("Cancel this appointment?")){
+   try{await backend.cancel(value);await refreshAppointments();historyTab="cancelled";render();}
+   catch(error){accountError=error.message||"Could not cancel the appointment.";render();}
+  }
+  break;
+ case "book":if(!canBook(facility()))break;selected={facility:selected.facility,doctor:Number(value),date:dayKey()};await openSchedule();break;
  case "retry-schedule":await openSchedule();break;
- case "retry-catalog":await loadCatalog();render();break;
+ case "retry-catalog":await loadCatalog();render();refreshDiscovery();break;
  case "date":selected.date=value;selected.session=null;render();break;
  case "session":selected.session=Number(value);render();break;
  case "continue":
@@ -491,6 +581,9 @@ document.addEventListener("input",event=>{
  if(event.target.id==="search"){query=event.target.value;document.getElementById("results").innerHTML=results();}
 });
 document.addEventListener("change",event=>{
+ if(event.target.id==="distance-filter"){radius=Number(event.target.value);document.getElementById("results").innerHTML=results();}
+ if(event.target.id==="sort-directory"){sortBy=event.target.value;document.getElementById("results").innerHTML=results();}
+ if(event.target.id==="facility-department"){department=event.target.value;render();}
  if(event.target.id==="active-booking"){activeBooking=appointments().find(b=>b.id===event.target.value);render();}
 });
 document.addEventListener("submit",async event=>{
@@ -535,7 +628,8 @@ function clearAccount(){
 async function loadCatalog(){
  try{
   const rows=await backend.facilities();
-  facilities=rows.map(f=>({...f,img:f.type.toLowerCase()}));
+  storedFacilities=rows.filter(f=>!f.is_demo).map(f=>({...f,img:f.type.toLowerCase()}));
+  facilities=combineDirectory(storedFacilities,externalFacilities);
   catalogError="";
  }catch{catalogError="Could not load clinics and hospitals. Please try again.";}
 }
@@ -597,8 +691,22 @@ async function submitLive(type,details,form,action){
    go(authReturn,true);
    return;
   }
-  if(!user){startLogin(type==="booking"?"details":"account");return;}
-  const fields={name:details.name.trim(),age:Number(details.age),sex:details.sex};
+  if(!user){startLogin(type==="support"?"support":type==="booking"?"details":"account");return;}
+  if(type==="support"){
+   await backend.support(details.subject.trim(),details.message.trim());
+   form.reset();
+   const sent=document.createElement("p");
+   sent.setAttribute("role","status");sent.textContent="Support request sent.";
+   form.append(sent);
+   return;
+  }
+  const fields={name:details.name.trim(),age:Number(details.age),sex:details.sex,mobile:details.mobile?.trim()||null};
+  if(fields.mobile){
+   let number=fields.mobile.replace(/[ .()-]/g,"");
+   if(/^\d{10}$/.test(number)) number="+91"+number;
+   if(!/^\+[1-9]\d{9,14}$/.test(number)){error.textContent="Enter a valid mobile number.";return;}
+   fields.mobile=number;
+  }
   if(!fields.name){error.textContent="Enter your name.";return;}
   if(type==="profile"){
    await backend.saveProfile(user.id,fields);
@@ -645,7 +753,7 @@ async function start(){
   });
   let refreshingFacility=false;
   setInterval(async()=>{
-   if(page!=="facility"||refreshingFacility||facility()?.directory_only)return;
+   if(page!=="facility"||refreshingFacility||!canBook(facility()))return;
    refreshingFacility=true;
    try{await refreshFacilitySessions(facility());}
    finally{refreshingFacility=false;}
@@ -667,5 +775,6 @@ async function start(){
   if(found.length===1){activeBooking=found[0];page="token";}
  }
  render();
+ if(live)refreshDiscovery();
 }
 start();

@@ -8,13 +8,15 @@ const stages=["Requested","Link Sent","Link Opened","Registered","Email Verified
 const date=value=>value?new Date(value).toLocaleString():"";
 let query={search:"",status:"",mode:"",offset:0};
 const signOut=document.querySelector("#sign-out");
-const section=()=>currentSection(["requests","plans","templates"],"requests");
+const section=()=>currentSection(["requests","plans","templates","directory","support","audit"],"requests");
 const panel=body=>'<section class="panel raised stack">'+body+'</section>';
 const action=(label,name,id)=>button(label,'type="button" data-action="'+name+'" data-id="'+escape(id)+'"');
 function requestCard(r) {
   return '<article class="panel raised stack'+(r.stuck?' stuck':'')+'"><h3>'+escape(r.facility_name)+'</h3>'+
     '<p>'+escape(r.contact_name)+' · '+escape(r.phone)+' · '+escape(r.email)+'</p>'+
     '<p>'+escape(r.mode==='self'?'Self Registration':'Assisted Onboarding')+' · '+escape(date(r.created_at))+'</p>'+
+    (r.claim_facility_id?'<p>Directory claim · '+escape(r.claim_facility_id)+'</p>':'')+
+    (r.claim_external_id?'<p>External claim · <a href="https://www.openstreetmap.org/'+escape(r.claim_external_id.slice(4))+'" target="_blank" rel="noopener noreferrer">Open source listing</a></p>':'')+
     '<p><strong>'+escape(r.status)+'</strong>'+ (r.stuck?' · Waiting over 48 hours':'')+'</p>'+
     (r.contacted_at?'<p>Contacted '+escape(date(r.contacted_at))+'</p>':'')+
     '<div class="actions">'+action("Review","review",r.id)+action("Mark contacted","contact",r.id)+
@@ -41,11 +43,37 @@ function templateCard(t) {
     input("Email subject","subject",t.subject,"required maxlength=200")+
     area("Message text","body",t.body,"required maxlength=10000")+button("Save Template",'type="submit"')+'</form>';
 }
+function directoryCard(f={}) {
+  const state=f.booking_enabled?"Appointment service active":"Directory only";
+  return '<form class="panel raised stack" data-form="directory" data-id="'+escape(f.id||"")+'"><h3>'+escape(f.name||"Add directory facility")+'</h3>'+
+   (f.id?'<p>'+state+(f.assigned?" · Staff assigned":"")+'</p>':'')+
+   input("Name","name",f.name,"required maxlength=120")+
+   '<label class="field">Facility type<select name="type">'+option("Clinic","Clinic",f.type)+option("Hospital","Hospital",f.type)+'</select></label>'+
+   input("Area","area",f.area,"required maxlength=120")+area("Address","address",f.address,"required maxlength=500")+
+   input("Opening hours","hours",f.hours,"maxlength=150")+input("Public phone","contact",f.contact,"type=tel")+
+   input("Website (HTTPS)","website",f.website,"type=url")+input("Photo URL (HTTPS)","photo_url",f.photo_url,"type=url")+
+   '<div class="split">'+input("Latitude","latitude",f.latitude,"type=number step=any min=-90 max=90")+
+   input("Longitude","longitude",f.longitude,"type=number step=any min=-180 max=180")+'</div>'+
+   '<div class="actions">'+button("Save Directory Details",'type="submit"')+
+   (f.id?action(f.booking_enabled?"Deactivate Appointment Service":"Activate Appointment Service",f.booking_enabled?"service_off":"service_on",f.id):'')+'</div></form>';
+}
+function auditList(rows){
+ return panel(rows.length?'<ol>'+rows.map(row=>'<li>'+escape(date(row.at))+' · '+escape(row.action.replaceAll("_"," "))+' · '+escape(row.subject)+'</li>').join("")+'</ol>':'<p>No facility changes recorded yet.</p>');
+}
+function supportList(rows){
+ return rows.length?rows.map(row=>panel('<h3>'+escape(row.subject)+'</h3><p>'+escape(row.message)+'</p><p>'+escape(row.status)+' · '+escape(date(row.created_at))+'</p>'+
+ (row.status==="Open"?action("Mark resolved","support_resolve",row.id):''))).join(""):panel('<p>No support requests.</p>');
+}
+let directory=[];
 async function draw() {
   const result=await admin("dashboard",query);
   const selected=section();
   let body;
-  if (selected==="plans") body='<div class="admin-grid">'+planCard()+result.plans.map(planCard).join("")+'</div>';
+  directory=result.directory??[];
+  if(selected==="directory")body='<div class="admin-grid">'+directoryCard()+directory.map(directoryCard).join("")+'</div>';
+  else if(selected==="audit")body=auditList(result.audit??[]);
+  else if(selected==="support")body=supportList(result.support??[]);
+  else if (selected==="plans") body='<div class="admin-grid">'+planCard()+result.plans.map(planCard).join("")+'</div>';
   else if (selected==="templates") body=panel('<p>Available placeholders: {{contact}}, {{facility}}, {{mode}}, {{link}}, {{verification_link}}, {{portal}}, {{reason}}.</p>')+
     '<div class="admin-grid">'+result.templates.map(templateCard).join("")+'</div>';
   else body='<form data-form="filters" class="panel raised stack"><h2>Provider Requests</h2>'+
@@ -73,6 +101,9 @@ function reviewMarkup(id,r) {
     (r.plan?detail("Plan",r.plan.name+" · "+r.plan.currency+" "+r.plan.price+" / "+r.plan.cycle):"")+
     (profile.doctors?.length?'<h4>Doctors</h4><ul>'+profile.doctors.map(d=>'<li>'+escape(d.name)+' · '+escape(d.specialty)+'</li>').join("")+'</ul>':"")+
     (files.length?'<h4>Private files</h4><ul>'+files.map(path=>'<li><button type="button" data-action="document" data-id="'+escape(id)+'" data-path="'+escape(path)+'">'+escape(path.split("/").at(-1))+'</button></li>').join("")+'</ul>':"")+
+    '<form data-form="claim-link" data-id="'+escape(id)+'" class="stack"><label class="field">Match an existing directory facility<select name="facility" required>'+
+    option("","Choose facility")+directory.filter(f=>!f.booking_enabled).map(f=>option(f.id,f.name+" · "+f.area)).join("")+
+    '</select></label>'+button("Link Claim",'type="submit"')+'</form>'+
     '<h4>Stage history</h4><ul>'+r.history.map(h=>'<li>'+escape(h.status)+' · '+escape(date(h.at))+'</li>').join("")+'</ul>'+
     '<h4>Message log</h4>'+(r.messages.length?'<ul>'+r.messages.map(m=>'<li>'+escape(m.channel)+' · '+escape(m.template)+' · '+
       escape(m.sentAt?"Sent":m.failedAt?"Failed":"Queued")+' · '+escape(m.attempts)+' attempts'+
@@ -117,7 +148,8 @@ screen.addEventListener("click",event=>{
     }
     if (name==="next"||name==="previous") {query.offset+=name==="next"?100:-100;await draw();return;}
     if (name==="delete-plan"&&!confirm("Delete this subscription plan? Existing applications keep their selected plan.")) return;
-    await admin(name==="delete-plan"?"plan_delete":name,{id});
+    const args=["service_on","service_off"].includes(name)?{facility:id}:{id};
+    await admin(name==="delete-plan"?"plan_delete":name,args);
     if (["resend","convert"].includes(name)) await send(id);
     await draw();status.textContent="Saved.";
   });
@@ -127,7 +159,9 @@ screen.addEventListener("submit",event=>{
   const form=event.target,fields=Object.fromEntries(new FormData(form)),id=form.dataset.id;
   void run(async()=>{
     if(form.dataset.form==="filters"){query={...fields,offset:0};await draw();return;}
-    if(form.dataset.form==="plan"){
+    if(form.dataset.form==="directory") await admin("directory_save",{facility:id,...fields});
+    else if(form.dataset.form==="claim-link") await admin("link_claim",{id,facility:fields.facility});
+    else if(form.dataset.form==="plan"){
       const limits=Object.fromEntries(fields.limits.split("\n").filter(line=>line.trim()).map(line=>{
         const [key,...rest]=line.split("="), raw=rest.join("=").trim();
         if(!key.trim()||!raw) throw new Error("Enter limits as name=value, one per line.");

@@ -67,7 +67,9 @@ function login() {
   screen.innerHTML = '<h1 class="pagehead">Staff Sign In</h1><form class="panel raised stack" data-form="login">' +
     field("Staff email", "email", "", 'type="email" autocomplete="username" required') +
     field("Password", "password", "", 'type="password" autocomplete="current-password" required') +
-    '<button class="primary">Sign In</button></form>';
+    '<button class="primary">Sign In</button></form><section class="panel raised stack"><h2>Register Your Facility</h2>'+
+    '<p>Enable online appointments, live token tracking and OPD management for your clinic or hospital.</p>'+
+    '<a href="../onboarding/">Register Your Facility</a></section>';
 }
 
 async function loadAccount() {
@@ -123,6 +125,12 @@ function settings() {
     field("Facility name", "name", facility.name, "required") + field("Locality", "area", facility.area, "required") +
     field("Address", "address", facility.address, "required") + field("Opening hours", "hours", facility.hours, "required") +
     field("Public contact", "contact", facility.contact) + '<button class="primary">Save Profile</button></form>' +
+    '<form class="panel raised stack" data-form="booking-settings"><h2>Appointment Settings</h2><p>'+
+    (facility.booking_enabled?"Appointment service active.":"Setup pending. Configure a doctor and OPD session, then BANR can activate the service.")+'</p>'+
+    '<label class="field">Online booking<select name="online">'+option("true","Accept online appointments",String(facility.accepts_online))+
+    option("false","Do not accept online appointments",String(facility.accepts_online))+'</select></label>'+
+    field("Advance booking days (0 for same day)", "days", facility.advance_booking_days ?? 7, 'type="number" min="0" max="90" required')+
+    '<button class="primary">Save Appointment Settings</button></form>' +
     (singleDoctor() && doctor ? '' : '<form class="panel raised stack" data-form="doctor"><h2>Add Doctor</h2>' + doctorFields() +
     '<button class="primary">Add Doctor</button></form>') +
     (doctor ? '<form class="panel raised stack" data-form="doctor"><h2>Edit Selected Doctor</h2>' +
@@ -166,6 +174,8 @@ function populateFacilityQr(panel) {
 }
 
 function liveOpd() {
+  const facility=facilities.find(item=>item.id===facilityId);
+  if(!facility?.booking_enabled)return '<h1 class="pagehead">Live OPD</h1><p class="panel raised">Appointment service is inactive. Configure a doctor and an upcoming OPD session in Facility Settings.</p>';
   if (!sessionId) return '<h1 class="pagehead">Today’s OPD</h1><p class="panel raised">Select or add a doctor and session in Facility Settings.</p>';
   return '<h1 class="pagehead">Today’s OPD</h1><section class="panel raised stack" id="provider-queue" aria-live="polite">Loading queue…</section>' +
     '<form class="panel raised stack" data-form="late" id="provider-late"><h2>Doctor Delay</h2>' +
@@ -231,7 +241,7 @@ function render() {
     ${singleDoctor() ? `<p class="doctor-name">${escape(doctors[0]?.name ?? "")}</p>` : `<label class="field">Doctor<select id="provider-doctor">${doctors.map(item => option(item.id,item.name,doctorId)).join("")}</select></label>`}
     <label class="field">Session<select id="provider-session">${sessions.map(item => option(item.id,sessionLabel(item),sessionId)).join("")}</select></label></section>` +
     (tab === "settings" ? settings() : liveOpd());
-  if (tab === "opd") {
+  if (tab === "opd" && screen.querySelector("#provider-queue")) {
     void refreshQueue().catch(failure => { error.textContent = failure.message; });
   }
   populateFacilityQr(screen.querySelector("[data-facility-qr]"));
@@ -292,7 +302,7 @@ screen.addEventListener("click", event => {
     } else if (action === "close") {
       if (!queue) return;
       const pending = queue.waiting + Number(queue.serving);
-      if (!confirm(pending ? `Close OPD with ${pending} pending patient(s)?` : "Close this OPD session?")) return;
+      if (!confirm(pending ? `Close OPD and cancel ${pending} pending appointment(s)?` : "Close this OPD session?")) return;
       await queueAction(action, { pending_count: pending });
     } else {
       await queueAction(action);
@@ -309,6 +319,10 @@ screen.addEventListener("submit", event => {
     if (type === "login") {
       await read(client.auth.signInWithPassword({ email: data.email.trim(), password: data.password }));
       await loadAccount();
+    } else if (type === "booking-settings") {
+      await read(client.rpc("banr_provider_booking_settings", { p_facility: facilityId, p_online: data.online === "true", p_days: Number(data.days) }));
+      await loadAccount();
+      notice.textContent = "Appointment settings saved.";
     } else if (type === "walkin" || type === "late") {
       await queueAction(type, data);
       form.reset();
@@ -337,7 +351,7 @@ if (!client) {
     if (!busy && tab === "opd" && queue?.advance_after && screen.querySelector("[data-action=next]")) showQueue(queue);
   }, 250);
   setInterval(() => {
-    if (!busy && tab === "opd" && sessionId) void refreshQueue().catch(() => {
+    if (!busy && tab === "opd" && sessionId && screen.querySelector("#provider-queue")) void refreshQueue().catch(() => {
       error.textContent = "Could not refresh the queue. Showing the last update.";
     });
   }, 5000);

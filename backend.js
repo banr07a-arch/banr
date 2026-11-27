@@ -42,10 +42,12 @@ export const backend = {
     : Promise.resolve([]),
   sessions: doctorId => data(client.from("opd_sessions").select("*").eq("doctor_id", doctorId)
     .gt("ends_at", new Date().toISOString()).neq("status", "closed").order("starts_at")),
-  profile: () => data(client.from("patient_profiles").select("name,age,sex").maybeSingle()),
+  profile: () => data(client.from("patient_profiles").select("name,age,sex,mobile").maybeSingle()),
   saveProfile: (userId, details) => data(client.from("patient_profiles").upsert({ ...details, user_id: userId })),
   appointments: () => data(client.rpc("banr_my_appointments")),
-  book: (sessionId, { name, age, sex }) => data(client.rpc("banr_book_session", {
-    p_session: sessionId, p_name: name, p_age: age, p_sex: sex,
+  support: (p_subject,p_message) => data(client.rpc("banr_support_request",{p_subject,p_message})),
+  cancel: p_appointment => data(client.rpc("banr_cancel_appointment", { p_appointment })),
+  book: (sessionId, { name, age, sex, mobile }) => data(client.rpc("banr_book_session_with_contact", {
+    p_session: sessionId, p_name: name, p_age: age, p_sex: sex, p_mobile: mobile,
   })),
 };

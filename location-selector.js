@@ -9,7 +9,7 @@ async function lookup(path, params) {
   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error("Location lookup is unavailable.");
   const { features } = await response.json();
-  return features.map(({ properties }) => properties).filter(place => place?.countrycode?.toUpperCase() === "IN");
+  return features.map(({ properties, geometry }) => ({ ...properties, coordinates: geometry?.coordinates })).filter(place => place?.countrycode?.toUpperCase() === "IN");
 }
 
 export async function searchLocations(query) {
@@ -20,7 +20,8 @@ export async function searchLocations(query) {
     if (!name) continue;
     const context = [...new Set([place.district, place.city, place.county, place.state])]
       .filter(part => part && part.toLowerCase() !== name.toLowerCase()).join(", ");
-    unique.set(name + "|" + context, { name, context });
+    const [longitude, latitude] = place.coordinates ?? [];
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) unique.set(name + "|" + context, { name, context, latitude, longitude });
   }
   return [...unique.values()];
 }
@@ -42,5 +43,5 @@ export async function currentLocality(geolocation = navigator.geolocation) {
     (place.type === "city" && place.name)
   );
   if (!name) throw new Error("Could not identify your locality in India. Search for a location instead.");
-  return name;
+  return { name, latitude: coords.latitude, longitude: coords.longitude };
 }
