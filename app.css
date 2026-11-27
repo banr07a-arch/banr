@@ -78,3 +78,5 @@
 .faq { margin: 0; }
 .faq summary { cursor: pointer; font-weight: 700; }
 .faq p { margin-top: 8px; }
+
+.hero.hero-uploaded{min-height:0;padding:0;background:#dff1e8}.hero-uploaded img{display:block;position:static;width:100%;aspect-ratio:16/9;object-fit:contain;mask-image:none;opacity:1}.hero-uploaded .sponsored{position:absolute;right:10px;top:8px;margin:0;padding:4px 8px;border-radius:8px;background:#064b36;color:#fff}

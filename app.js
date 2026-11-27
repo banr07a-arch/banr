@@ -123,6 +123,11 @@ let bannerIndex=0, expertTopic="", expertAnswerIndex=null;
 
 function managedBanner(slide){
  const imageUrl=httpsUrl(slide.imageUrl), link=httpsUrl(slide.link);
+ if(imageUrl&&slide.imageLayout==="full"){
+  const artwork='<img src="'+esc(imageUrl)+'" alt="'+esc(slide.title+(slide.description?' · '+slide.description:''))+'">';
+  return '<section class="hero hero-uploaded">'+(link?'<a href="'+esc(link)+'" rel="noopener noreferrer" target="_blank">'+artwork+'</a>':artwork)+
+   (slide.sponsored===true?'<p class="sponsored">Sponsored</p>':'')+'</section>';
+ }
  return '<section class="hero">'+(imageUrl?'<img src="'+esc(imageUrl)+'" alt="">':'')+
  '<h2>'+esc(slide.title)+'</h2><p>'+esc(slide.description)+'</p>'+
  (slide.sponsored===true?'<p class="sponsored">Sponsored</p>':'')+

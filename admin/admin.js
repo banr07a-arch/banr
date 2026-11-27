@@ -30,7 +30,14 @@ function item(kind, value) {
   let fields;
   if (kind === "banner") {
     fields = input("Title", "title", value?.title) + area("Description", "description", value?.description) +
-      input("Image URL (HTTPS)", "imageUrl", value?.imageUrl, "url") + input("Button link (HTTPS)", "link", value?.link, "url") +
+      '<label class="field">Upload banner image from device<input type="file" data-banner-file accept="image/png,image/jpeg,image/webp"></label>' +
+      '<p class="text-small">Recommended: 1280 × 720 px (16:9). PNG, JPG or WebP. Maximum 5 MB.</p>' +
+      '<input type="hidden" name="imageUrl" value="' + escape(httpsUrl(value?.imageUrl)) + '">' +
+      '<input type="hidden" name="imageLayout" value="' + (value?.imageLayout === "full" ? "full" : "") + '">' +
+      '<p data-banner-feedback role="status"></p><img data-banner-preview class="admin-banner-preview" alt="Banner preview"' +
+      (httpsUrl(value?.imageUrl) ? ' src="' + escape(httpsUrl(value?.imageUrl)) + '"' : ' hidden') + '>' +
+      '<button type="button" data-clear-banner' + (httpsUrl(value?.imageUrl) ? '' : ' hidden') + '>Remove image</button>' +
+      input("Button link (HTTPS)", "link", value?.link, "url") +
       '<label><input name="sponsored" type="checkbox"' + (value?.sponsored === true ? " checked" : "") + '> Sponsored ad</label>';
   } else if (kind === "pair") {
     fields = input("Heading or question", "heading", value?.[0]) + area("Text", "body", value?.[1]);
@@ -62,7 +69,7 @@ function readItem(kind, entry) {
     if ((imageUrl && !httpsUrl(imageUrl)) || (link && !httpsUrl(link))) throw new Error("Banner links must use HTTPS.");
     const title = value("title");
     if (!title) throw new Error("Enter a title for each banner.");
-    return { title, description: value("description"), imageUrl, link, sponsored: get("sponsored").checked };
+    return { title, description: value("description"), imageUrl, imageLayout: value("imageLayout"), link, sponsored: get("sponsored").checked };
   }
   if (kind === "pair") return [value("heading"), value("body")];
   if (kind === "expert") {
@@ -150,7 +157,64 @@ async function run(action) {
   finally { busy = false; }
 }
 
+let pendingBannerUploads = 0;
+screen.addEventListener("change", async event => {
+  const picker = event.target.closest("[data-banner-file]");
+  const file = picker?.files[0];
+  if (!file) return;
+  const entry = picker.closest("fieldset");
+  const feedback = entry.querySelector("[data-banner-feedback]");
+  picker.disabled = true;
+  pendingBannerUploads++;
+  try {
+    if (!["image/png","image/jpeg","image/webp"].includes(file.type) || !file.size || file.size > 5*1024*1024) {
+      throw new Error("Choose a PNG, JPG or WebP image up to 5 MB.");
+    }
+    const bitmap = await createImageBitmap(file);
+    const dimensions = bitmap.width + " × " + bitmap.height + " px";
+    bitmap.close();
+    feedback.textContent = "Uploading…";
+    const body = new FormData();
+    body.set("image",file);
+    const result = await client.functions.invoke("banr-banner-upload", {
+      body, headers: { "x-banr-admin-session": token },
+    });
+    if (result.error) {
+      const details = await result.error.context?.json().catch(()=>null);
+      throw new Error(details?.error || "Upload failed. Try again.");
+    }
+    const uploaded = httpsUrl(result.data?.url);
+    if (!uploaded) throw new Error("Upload did not return an image.");
+    entry.querySelector('[name="imageUrl"]').value = uploaded;
+    entry.querySelector('[name="imageLayout"]').value = "full";
+    const preview = entry.querySelector("[data-banner-preview]");
+    preview.src = uploaded;
+    preview.hidden = false;
+    entry.querySelector("[data-clear-banner]").hidden = false;
+    feedback.textContent = "Uploaded · " + dimensions + ". Publish Patient Content to apply.";
+  } catch (failure) {
+    feedback.textContent = failure.message || "Upload failed.";
+  } finally {
+    pendingBannerUploads--;
+    picker.value = "";
+    picker.disabled = false;
+  }
+});
+
 screen.addEventListener("click", event => {
+  const clear = event.target.closest("[data-clear-banner]");
+  if (clear) {
+    const entry = clear.closest("fieldset");
+    if (entry.querySelector("[data-banner-file]").disabled) return;
+    entry.querySelector('[name="imageUrl"]').value = "";
+    entry.querySelector('[name="imageLayout"]').value = "";
+    const preview = entry.querySelector("[data-banner-preview]");
+    preview.removeAttribute("src");
+    preview.hidden = true;
+    clear.hidden = true;
+    entry.querySelector("[data-banner-feedback]").textContent = "Image removed from draft.";
+    return;
+  }
   const mode = event.target.closest("[data-login-mode]");
   if (mode) { error.textContent = ""; login(mode.dataset.loginMode === "setup"); return; }
   const target = event.target.closest("[data-add],[data-remove],[data-move]");
@@ -197,6 +261,7 @@ screen.addEventListener("submit", event => {
       status.textContent = action === "grant_staff" ? "Clinic access granted." : "Clinic access removed.";
       return;
     }
+    if (key === "patient" && pendingBannerUploads) throw new Error("Wait for the banner image to finish uploading.");
     const payload = { subtitle: raw.subtitle.trim() };
     if (key === "provider") payload.notice = raw.notice.trim();
     else {

@@ -60,3 +60,5 @@
   .admin-nav-brand { padding: 6px 4px 9px; }
   .admin-nav nav { grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr)); }
 }
+
+.admin-banner-preview{display:block;width:min(100%,480px);height:auto;aspect-ratio:16/9;object-fit:contain;background:#dff1e8;border-radius:12px}
