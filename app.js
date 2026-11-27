@@ -465,7 +465,6 @@ function supportPage(){
 function locationPage(){
  return pageTitle("Change Location")+
  '<section class="panel raised stack">'+btn("Use Current Location","use-current-location")+
- '<p class="small">Uses your device coordinates to look up your locality via Photon (OpenStreetMap).</p>'+
  '<form class="stack" data-form="location"><label class="field">Search Location<input name="area" type="search" minlength="2" maxlength="100" placeholder="Search for a city or locality in India" required></label>'+
  '<button class="primary" type="submit">Search</button></form>'+
  '<p class="small" id="location-status" role="status"></p><div class="stack" id="location-results"></div></section>';

@@ -31,17 +31,20 @@ export async function currentLocality(geolocation = navigator.geolocation) {
   const { coords } = await new Promise((resolve, reject) => geolocation.getCurrentPosition(
     resolve,
     error => reject(new Error(error.code === 1
-      ? "Location permission denied. Search for a location instead."
-      : "Could not get your device location. Search for a location instead.")),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      ? "Allow location access in your browser, or search for your area below."
+      : "Your device could not share its location. Try again or search for your area below.")),
+    { enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 }
   ));
-  const matches = await lookup("/reverse", { lat: coords.latitude, lon: coords.longitude, limit: 1 });
-  const place = matches[0];
-  const name = place && (
-    (["locality", "district"].includes(place.type) && place.name) ||
-    place.locality || place.district || place.city ||
-    (place.type === "city" && place.name)
-  );
-  if (!name) throw new Error("Could not identify your locality in India. Search for a location instead.");
-  return { name, latitude: coords.latitude, longitude: coords.longitude };
+  const { latitude, longitude } = coords;
+  let name;
+  try {
+    const matches = await lookup("/reverse", { lat: latitude, lon: longitude, limit: 5 });
+    for (const level of ["locality", "district", "city"]) {
+      name = matches.map(place => place[level] || (place.type === level && place.name)).find(Boolean);
+      if (name) break;
+    }
+  } catch {
+    // Nearby discovery still works with coordinates when reverse lookup fails.
+  }
+  return { name: name || "Current Location", latitude, longitude };
 }
