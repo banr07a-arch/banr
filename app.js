@@ -1,3 +1,4 @@
+const banrLogo = new URL("./assets/banr-official-logo.jpg", import.meta.url).href;
 import { currentLocality, searchLocations } from "./location-selector.js";
 import { patientDefaults, contentWithDefaults, httpsUrl } from "./managed-content.js";
 let content = patientDefaults;
@@ -84,7 +85,7 @@ function go(next,reset=false){
 }
 function shell(){
  topbar.innerHTML=(previous.length?btn(icon("back"),"back","iconbtn"):"<span></span>")+
- '<div><div class="brand patient-brand"><span class="patient-brand-mark">'+icon("calendar")+'</span><span>BANR</span></div><div class="subtitle">'+esc(content.subtitle)+'</div></div>'+
+ '<div><div class="patient-brand"><img src="'+banrLogo+'" alt="BANR" width="720" height="540"></div><div class="subtitle">'+esc(content.subtitle)+'</div></div>'+
  '<button class="iconbtn" type="button" data-action="notifications" aria-label="Notifications">'+icon("bell")+'</button>';
  topbar.querySelector('[data-action=back]')?.setAttribute("aria-label","Go back");
  const current=["token","appointments","account"].includes(page)?page:"home";
