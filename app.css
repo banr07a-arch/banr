@@ -112,10 +112,11 @@
 .app:has(> #screen) .search input::placeholder { color: var(--patient-ink); opacity: .8; }
 
 .app:has(> #screen) .patient-brand {
-  display: inline-flex;
+  display: flex;
+  justify-content: center;
   align-items: center;
   gap: 8px;
-  color: #151515;
+  color: var(--green);
   font-size: clamp(32px, 8vw, 42px);
 }
 .patient-brand-emblem {
@@ -136,3 +137,5 @@
   top: 50%;
   transform: translateY(-50%);
 }
+
+.patient-brand + .subtitle { margin: 0; text-align: center; }
