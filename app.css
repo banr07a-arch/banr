@@ -110,3 +110,10 @@
 .app:has(> #screen) a { color: var(--patient-ink); }
 .app:has(> #screen) .hero a { color: inherit; }
 .app:has(> #screen) .search input::placeholder { color: var(--patient-ink); opacity: .8; }
+
+@media (min-width: 820px) {
+  .app:has(> #screen) {
+    zoom: 1.1;
+    min-height: calc((100dvh - 44px) / 1.1);
+  }
+}
