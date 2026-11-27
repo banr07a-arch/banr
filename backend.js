@@ -16,6 +16,7 @@ async function data(request) {
 }
 
 export const backend = {
+  content: p_key => data(client.rpc("banr_app_content", { p_key })),
   currentUser: async () => {
     const { session } = await data(client.auth.getSession());
     return session ? (await data(client.auth.getUser())).user : null;

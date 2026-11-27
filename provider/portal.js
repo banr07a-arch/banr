@@ -1,5 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
+import { providerDefaults, contentWithDefaults } from "../managed-content.js";
+const staffNotice = document.querySelector("#staff-notice");
+const subtitle = document.querySelector(".subtitle");
 
 const screen = document.querySelector("#provider-screen");
 const error = document.querySelector("#provider-error");
@@ -58,6 +61,9 @@ async function run(work) {
 }
 
 function login() {
+  subtitle.textContent = providerDefaults.subtitle;
+  staffNotice.textContent = "";
+  staffNotice.hidden = true;
   screen.innerHTML = '<h1 class="pagehead">Staff Sign In</h1><form class="panel raised stack" data-form="login">' +
     field("Staff email", "email", "", 'type="email" autocomplete="username" required') +
     field("Password", "password", "", 'type="password" autocomplete="current-password" required') +
@@ -65,6 +71,11 @@ function login() {
 }
 
 async function loadAccount() {
+  const managed = await read(client.rpc("banr_app_content", { p_key: "provider" })).catch(() => null);
+  const content = contentWithDefaults(providerDefaults, managed);
+  subtitle.textContent = content.subtitle;
+  staffNotice.textContent = content.notice;
+  staffNotice.hidden = !content.notice;
   facilities = await read(client.rpc("banr_provider_facilities"));
   if (!facilities.length) {
     screen.innerHTML = '<h1 class="pagehead">Facility access required</h1><p class="panel raised">This account has no assigned facility.</p>' +

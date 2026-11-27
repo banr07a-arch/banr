@@ -1,5 +1,6 @@
 import { currentLocality, searchLocations } from "./location-selector.js";
-import { supportEmail, refundTerms, promotions, expertAnswers, helpFAQs, privacySections } from "./patient-content.js";
+import { patientDefaults, contentWithDefaults, httpsUrl } from "./managed-content.js";
+let content = patientDefaults;
 import { backend, live, walkInSms } from "./backend.js";
 const icons={
  home:'<path d="m3 10 9-7 9 7v10h-6v-7H9v7H3z"/>',
@@ -83,7 +84,7 @@ function go(next,reset=false){
 }
 function shell(){
  topbar.innerHTML=(previous.length?btn(icon("back"),"back","iconbtn"):"<span></span>")+
- '<div><div class="brand">BANR</div><div class="subtitle">Save Your Time</div></div>'+
+ '<div><div class="brand">BANR</div><div class="subtitle">'+esc(content.subtitle)+'</div></div>'+
  '<button class="iconbtn" type="button" data-action="notifications" aria-label="Notifications">'+icon("bell")+'</button>';
  topbar.querySelector('[data-action=back]')?.setAttribute("aria-label","Go back");
  const current=["token","appointments","account"].includes(page)?page:"home";
@@ -109,18 +110,28 @@ function results(){
 const resourcePages = [
  ["help","Help Center"], ["privacy","Privacy Policy"], ["refund","Refund Policy"], ["about","About BANR"],
 ];
-const reviewedAnswers = expertAnswers.filter(item=>
+let reviewedAnswers;
+function loadReviewedAnswers(){
+ reviewedAnswers = content.expertAnswers.filter(item=>
  item.review?.status==="reviewed" && item.review.verified === true &&
  item.review.name && item.review.credential && item.review.date &&
  item.topic && item.question && item.answer);
+}
+loadReviewedAnswers();
 const expertEmpty = "No reviewed answers are available yet.";
 let bannerIndex=0, expertTopic="", expertAnswerIndex=null;
 
+function managedBanner(slide){
+ const imageUrl=httpsUrl(slide.imageUrl), link=httpsUrl(slide.link);
+ return '<section class="hero">'+(imageUrl?'<img src="'+esc(imageUrl)+'" alt="">':'')+
+ '<h2>'+esc(slide.title)+'</h2><p>'+esc(slide.description)+'</p>'+
+ (slide.sponsored===true?'<p class="sponsored">Sponsored</p>':'')+
+ (link?'<p><a href="'+esc(link)+'" rel="noopener noreferrer" target="_blank">Learn more</a></p>':'')+'</section>';
+}
 function homeBanners(){
  const banners=[
-  '<section class="hero">'+image("hero","")+'<h2>Skip the Wait,<br>Book Your OPD<br>with <strong>BANR</strong></h2><p>✓ Live Token &nbsp; ✓ Wait Time &nbsp; ✓ Easy Booking</p></section>',
-  ...promotions.map(slide=>'<section class="hero"><h2>'+esc(slide.title)+'</h2><p>'+
-   esc(slide.description)+'</p>'+(slide.sponsored?'<p class="sponsored">Sponsored</p>':'')+'</section>'),
+  content.hero?managedBanner(content.hero):'<section class="hero">'+image("hero","")+'<h2>Skip the Wait,<br>Book Your OPD<br>with <strong>BANR</strong></h2><p>✓ Live Token &nbsp; ✓ Wait Time &nbsp; ✓ Easy Booking</p></section>',
+  ...content.promotions.map(managedBanner),
  ];
  return '<section aria-label="Home banners"><div class="banner-track" tabindex="0" aria-label="Swipe or use the slide buttons to browse banners">'+
  banners.map((banner,index)=>'<div class="banner-slide" aria-label="Slide '+(index+1)+' of '+banners.length+'">'+banner+'</div>').join("")+
@@ -177,24 +188,24 @@ function expertAnswer(){
  '<p class="notice">Reviewed by '+esc(item.review.name)+' · '+esc(item.review.credential)+' · '+esc(item.review.date)+'</p></article>';
 }
 function help(){
- return pageTitle("Help Center")+'<section class="stack">'+helpFAQs.map(([question,answer])=>
+ return pageTitle("Help Center")+'<section class="stack">'+content.helpFAQs.map(([question,answer])=>
  '<details class="panel raised faq"><summary>'+esc(question)+'</summary><p>'+esc(answer)+'</p></details>').join("")+
- (supportEmail?'<p class="panel raised">BANR support <a href="mailto:'+esc(supportEmail)+'">'+esc(supportEmail)+'</a></p>':
+ (content.supportEmail?'<p class="panel raised">BANR support <a href="mailto:'+esc(content.supportEmail)+'">'+esc(content.supportEmail)+'</a></p>':
  '<p class="notice">For help with an existing visit, contact your clinic or hospital reception.</p>')+'</section>';
 }
 function privacy(){
- return pageTitle("Privacy Policy")+'<section class="panel raised stack">'+privacySections.map(([heading,copy])=>
+ return pageTitle("Privacy Policy")+'<section class="panel raised stack">'+content.privacySections.map(([heading,copy])=>
  '<div><h2>'+esc(heading)+'</h2><p>'+esc(copy)+'</p></div>').join("")+
- (supportEmail?'<p>Privacy questions <a href="mailto:'+esc(supportEmail)+'">'+esc(supportEmail)+'</a></p>':'')+'</section>';
+ (content.supportEmail?'<p>Privacy questions <a href="mailto:'+esc(content.supportEmail)+'">'+esc(content.supportEmail)+'</a></p>':'')+'</section>';
 }
 function refund(){
- return pageTitle("Refund Policy")+'<section class="panel raised stack">'+(refundTerms.length?
- refundTerms.map(copy=>'<p>'+esc(copy)+'</p>').join(""):
+ return pageTitle("Refund Policy")+'<section class="panel raised stack">'+(content.refundTerms.length?
+ content.refundTerms.map(copy=>'<p>'+esc(copy)+'</p>').join(""):
  '<p class="notice">Draft · Refund terms are awaiting approval.</p>')+'</section>';
 }
 function about(){
- return pageTitle("About BANR")+'<section class="panel raised stack"><p>BANR helps you find clinics and hospitals in your area, choose a doctor and book an available OPD visit.</p>'+
- '<p>After booking, open Appointments to find your visit or My Token to see your token, the latest queue status and an estimated wait when available.</p></section>';
+ return pageTitle("About BANR")+'<section class="panel raised stack">'+
+ content.about.map(copy=>'<p>'+esc(copy)+'</p>').join("")+'</section>';
 }
 function home(){
  return '<div class="intro row"><h1 tabindex="-1">Home</h1>'+btn(icon("pin")+esc(locationName)+icon("down"),"location","place raised")+'</div>'+
@@ -599,7 +610,10 @@ async function submitLive(type,details,form,action){
 async function start(){
  if(live){
   screen.innerHTML='<p class="panel raised" role="status">Loading BANR…</p>';
-  await Promise.all([loadCatalog(),(async()=>{
+  await Promise.all([loadCatalog(),backend.content("patient").then(value=>{
+   content=contentWithDefaults(patientDefaults,value);
+   loadReviewedAnswers();
+  }).catch(()=>{}),(async()=>{
    try{await setAccount(await backend.currentUser());}
    catch{accountError="Could not load your account. Sign in again if needed.";}
   })()]);
