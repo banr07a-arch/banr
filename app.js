@@ -169,10 +169,6 @@ function connectHomeBanners(){
  track.addEventListener("keydown",()=>{pendingSlide=null;});
 }
 
-function expertHome(){
- return '<section><div class="sectionhead"><h2>Expert Q&amp;A</h2>'+btn("View All","experts","link")+
- '</div>'+(reviewedAnswers.length?expertRows(reviewedAnswers.slice(0,2)):'<p class="panel raised">'+expertEmpty+'</p>')+'</section>';
-}
 function expertRows(items){
  return items.map(item=>'<article class="panel raised stack"><p class="subtle">'+esc(item.topic)+'</p>'+
  btn(esc(item.question),"expert-answer:"+reviewedAnswers.indexOf(item),"chip")+'</article>').join("");
@@ -223,7 +219,7 @@ function home(){
  homeBanners()+joinProvider()+
  '<div class="sectionhead"><h2>Find Doctor by Specialist</h2>'+btn("View All","specialties","link")+'</div>'+
  '<div class="specials">'+[["General","general","General"],["Physician","user","Physician"],["Dentist","dentist","Dentist"],["Gynae","user","Gynae"]].map(([label,img,value])=>btn(icon(img)+label,"filter:"+value,"tile raised")).join("")+'</div>'+
- '<div id="results">'+results()+'</div>'+expertHome()+(live?'':demo);
+ '<div id="results">'+results()+'</div>'+(live?'':demo);
 }
 let facilitySessions=null, facilityStatusRequest=0;
 async function refreshFacilitySessions(f){
