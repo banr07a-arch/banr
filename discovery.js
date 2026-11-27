@@ -68,6 +68,29 @@ function normalize(element, locality) {
   };
 }
 
+async function photonDirectory(latitude,longitude,locality,signal) {
+  const endpoint="https://photon.komoot.io/api/";
+  const box=[longitude-.055,latitude-.05,longitude+.055,latitude+.05].join(",");
+  const replies=await Promise.allSettled(["hospital","clinic"].map(async kind=>{
+    const url=new URL(endpoint);
+    url.search=new URLSearchParams({q:kind,osm_tag:"amenity:"+kind,bbox:box,limit:"25",lang:"en"});
+    const response=await fetch(url,{signal:AbortSignal.any([signal,AbortSignal.timeout(9000)])});
+    if(!response.ok)throw new Error("Map directory unavailable.");
+    const {features}=await response.json();
+    if(!Array.isArray(features))throw new Error("Map directory unavailable.");
+    return features.flatMap(({geometry,properties:p})=>{
+      const [lon,lat]=geometry?.coordinates??[];
+      const type={N:"node",W:"way",R:"relation"}[p?.osm_type];
+      if(!type||!Number.isInteger(p.osm_id)||!p.name) return [];
+      const row=normalize({type,id:p.osm_id,lat,lon,tags:{amenity:kind,name:p.name,
+        "addr:housenumber":p.housenumber,"addr:street":p.street,"addr:suburb":p.district,
+        "addr:city":p.city,"addr:postcode":p.postcode}},locality);
+      return row?[row]:[];
+    });
+  }));
+  if(replies.every(reply=>reply.status==="rejected"))throw new Error("Nearby directory is temporarily unavailable.");
+  return replies.flatMap(reply=>reply.status==="fulfilled"?reply.value:[]);
+}
 export async function nearbyDirectory(center, locality, signal) {
   const lat=Number(center.latitude), lng=Number(center.longitude);
   if (!Number.isFinite(lat)||!Number.isFinite(lng)||Math.abs(lat)>90||Math.abs(lng)>180) return [];
@@ -78,13 +101,22 @@ export async function nearbyDirectory(center, locality, signal) {
   const near="(around:5500,"+key+")";
   const query='[out:json][timeout:14];(nwr["amenity"~"^(hospital|clinic)$"]["name"]'+near+
     ';nwr["healthcare"~"^(hospital|clinic)$"]["name"]'+near+';);out center 160;';
-  const response=await fetch(overpass,{
-    method:"POST",body:new URLSearchParams({data:query}),
-    signal:AbortSignal.any([signal,AbortSignal.timeout(18000)])
-  });
-  if(!response.ok)throw new Error("Nearby directory is temporarily unavailable.");
-  const {elements}=await response.json();
-  if(!Array.isArray(elements))throw new Error("Nearby directory is temporarily unavailable.");
+  let elements;
+  try {
+    const response=await fetch(overpass,{
+      method:"POST",body:new URLSearchParams({data:query}),
+      signal:AbortSignal.any([signal,AbortSignal.timeout(18000)])
+    });
+    if(!response.ok)throw new Error("Nearby directory is temporarily unavailable.");
+    const result=await response.json();
+    elements=result.elements;
+    if(!Array.isArray(elements))throw new Error("Nearby directory is temporarily unavailable.");
+  } catch(error) {
+    if(signal.aborted)throw error;
+    const rows=await photonDirectory(Number(roundedLat),Number(roundedLng),locality,signal);
+    cache.set(key,{rows,expires:Date.now()+15*60*1000});
+    return rows;
+  }
   const found=new Map();
   for(const item of elements){
     if(!["node","way","relation"].includes(item.type)||!Number.isInteger(item.id))continue;

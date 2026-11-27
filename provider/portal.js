@@ -90,7 +90,7 @@ async function loadAccount() {
 }
 
 async function loadDoctors() {
-  doctors = await read(client.from("doctors").select("id,name,specialty,fee,consultation_minutes")
+  doctors = await read(client.from("doctors").select("id,name,specialty,fee,consultation_minutes,available_for_booking")
     .eq("facility_id", facilityId).order("name"));
   if (!doctors.some(item => item.id === doctorId)) doctorId = doctors[0]?.id ?? "";
   await loadSessions();
@@ -150,7 +150,10 @@ function doctorFields(doctor = {}) {
     field("Specialty", "specialty", doctor.specialty, "required") +
     field("Consultation fee (₹)", "fee", doctor.fee, 'type="number" min="0" required') +
     field("Average consultation (minutes)", "consultation_minutes", doctor.consultation_minutes ?? 10,
-      'type="number" min="1" max="180" required');
+      'type="number" min="1" max="180" required') +
+    '<label class="field">Doctor appointment availability<select name="available_for_booking">'+
+    option("true","Available for online appointments",String(doctor.available_for_booking??true))+
+    option("false","Unavailable for online appointments",String(doctor.available_for_booking??true))+'</select></label>';
 }
 
 function facilityQr() {
