@@ -62,3 +62,5 @@
 }
 
 .admin-banner-preview{display:block;width:min(100%,480px);height:auto;aspect-ratio:16/9;object-fit:contain;background:#dff1e8;border-radius:12px}
+
+.banner-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.banner-actions [data-clear-banner]{min-height:44px;padding:8px 12px;border:1px solid #a9c8ba;border-radius:10px;background:#f4faf7}.banner-actions [data-clear-banner]:disabled{opacity:.55}
