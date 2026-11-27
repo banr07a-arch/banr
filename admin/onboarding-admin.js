@@ -41,10 +41,13 @@ function planCard(plan={details:{},active:true}) {
 function templateCard(t) {
   return '<form data-form="template" data-id="'+escape(t.key)+'" class="panel raised stack"><h3>'+escape(t.key)+'</h3>'+
     input("Email subject","subject",t.subject,"required maxlength=200")+
-    area("Message text","body",t.body,"required maxlength=10000")+button("Save Template",'type="submit"')+'</form>';
+    area("Email message","body",t.body,"required maxlength=10000")+
+    (["registration","approval","rejection"].includes(t.key)?area("SMS text (optional; blank uses email message)","sms_body",t.sms_body,"maxlength=480"):"")+
+    button("Save Template",'type="submit"')+'</form>';
 }
 function directoryCard(f={}) {
   const state=f.booking_enabled?"Appointment service active":"Directory only";
+  const alternatives=f.id&&!f.booking_enabled?directory.filter(row=>row.id!==f.id&&row.type===f.type):[];
   return '<form class="panel raised stack" data-form="directory" data-id="'+escape(f.id||"")+'"><h3>'+escape(f.name||"Add directory facility")+'</h3>'+
    (f.id?'<p>'+state+(f.assigned?" · Staff assigned":"")+'</p>':'')+
    input("Name","name",f.name,"required maxlength=120")+
@@ -55,7 +58,10 @@ function directoryCard(f={}) {
    '<div class="split">'+input("Latitude","latitude",f.latitude,"type=number step=any min=-90 max=90")+
    input("Longitude","longitude",f.longitude,"type=number step=any min=-180 max=180")+'</div>'+
    '<div class="actions">'+button("Save Directory Details",'type="submit"')+
-   (f.id?action(f.booking_enabled?"Deactivate Appointment Service":"Activate Appointment Service",f.booking_enabled?"service_off":"service_on",f.id):'')+'</div></form>';
+   (f.id?action(f.booking_enabled?"Deactivate Appointment Service":"Activate Appointment Service",f.booking_enabled?"service_off":"service_on",f.id):'')+'</div>'+
+   (alternatives.length?'<details><summary>Merge duplicate listing</summary><label class="field">Keep this listing<select name="canonical"><option value="">Choose original</option>'+
+    alternatives.map(row=>option(row.id,row.name+" · "+row.area)).join("")+'</select></label>'+
+    action("Merge into original","directory_merge",f.id)+'</details>':'')+'</form>';
 }
 function auditList(rows){
  return panel(rows.length?'<ol>'+rows.map(row=>'<li>'+escape(date(row.at))+' · '+escape(row.action.replaceAll("_"," "))+' · '+escape(row.subject)+'</li>').join("")+'</ol>':'<p>No facility changes recorded yet.</p>');
@@ -148,7 +154,13 @@ screen.addEventListener("click",event=>{
     }
     if (name==="next"||name==="previous") {query.offset+=name==="next"?100:-100;await draw();return;}
     if (name==="delete-plan"&&!confirm("Delete this subscription plan? Existing applications keep their selected plan.")) return;
-    const args=["service_on","service_off"].includes(name)?{facility:id}:{id};
+    let args=["service_on","service_off"].includes(name)?{facility:id}:{id};
+    if(name==="directory_merge"){
+      const canonical=control.closest("form").elements.canonical.value;
+      if(!canonical)throw new Error("Choose the original listing to keep.");
+      if(!confirm("Hide this duplicate and redirect visitors to the original facility?"))return;
+      args={facility:id,canonical};
+    }
     await admin(name==="delete-plan"?"plan_delete":name,args);
     if (["resend","convert"].includes(name)) await send(id);
     await draw();status.textContent="Saved.";

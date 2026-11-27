@@ -17,7 +17,7 @@ const requestedClaim=requestParams.get("claim")||"";
 const externalClaim=/^osm:(node|way|relation)\/[1-9]\d{0,17}$/.test(requestParams.get("source")||"") ? requestParams.get("source") : "";
 let claimable=[];
 async function loadClaimable(){
- const result=await data(client.from("facilities").select("id,name,type,area,address").eq("is_demo",false).eq("booking_enabled",false).order("name").limit(200));
+ const result=await data(client.from("facilities").select("id,name,type,area,address").eq("is_demo",false).eq("booking_enabled",false).is("merged_into",null).order("name").limit(200));
  claimable=result;
  const select=screen.querySelector('[name="claim_id"]');
  if(!select)return;

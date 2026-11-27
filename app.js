@@ -63,6 +63,7 @@ let walkInFacility=urlParams.get("facility");
 let discoveryCenter=load("location-center",null);
 if(!discoveryCenter && locationName==="Mumbai")discoveryCenter={latitude:19.076,longitude:72.8777};
 let discoveryRequest, directoryStatus="", externalFacilities=[], storedFacilities=[], openOnly=false, radius=0, sortBy="distance", department="";
+let directoryAliases=[];
 const canBook=f=>Boolean(f&&(!live||(f.booking_enabled&&f.accepts_online&&!f.directory_only)));
 function refreshDiscovery(){
  if(!live||!discoveryCenter)return;
@@ -74,8 +75,8 @@ function refreshDiscovery(){
  update();
  void nearbyDirectory(center,label,request.signal).then(rows=>{
   if(request.signal.aborted)return;
-  externalFacilities=rows;
-  facilities=combineDirectory(storedFacilities,rows);
+  externalFacilities=rows.filter(row=>!directoryAliases.some(alias=>alias.external_place_id===row.external_place_id));
+  facilities=combineDirectory(storedFacilities,externalFacilities);
   directoryStatus="";
  }).catch(()=>{
   if(!request.signal.aborted)directoryStatus="Nearby map listings are temporarily unavailable. Showing the BANR directory.";
@@ -628,7 +629,8 @@ function clearAccount(){
 async function loadCatalog(){
  try{
   const rows=await backend.facilities();
-  storedFacilities=rows.filter(f=>!f.is_demo).map(f=>({...f,img:f.type.toLowerCase()}));
+  directoryAliases=rows.filter(f=>f.merged_into);
+  storedFacilities=rows.filter(f=>!f.is_demo&&!f.merged_into).map(f=>({...f,img:f.type.toLowerCase()}));
   facilities=combineDirectory(storedFacilities,externalFacilities);
   catalogError="";
  }catch{catalogError="Could not load clinics and hospitals. Please try again.";}
@@ -767,7 +769,9 @@ async function start(){
    finally{refreshing=false;if(["token","appointments","walkin"].includes(page)&&!busy)render();}
   },5000);
  }
- const listing=facilities.find(f=>f.directory_only&&(f.id===urlParams.get("listing")||f.id===walkInFacility));
+ const incoming=urlParams.get("listing")||walkInFacility;
+ const alias=directoryAliases.find(f=>f.id===incoming);
+ const listing=facilities.find(f=>(f.directory_only||alias||urlParams.has("listing"))&&f.id===(alias?.merged_into||incoming));
  if(listing){selected={facility:listing.id};page="facility";}
  else if((live&&/^[a-z0-9-]+$/.test(walkInFacility??""))||facilities.some(f=>f.id===walkInFacility)){
   page="walkin";
