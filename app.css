@@ -112,20 +112,27 @@
 .app:has(> #screen) .search input::placeholder { color: var(--patient-ink); opacity: .8; }
 
 .app:has(> #screen) .patient-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #151515;
+  font-size: clamp(32px, 8vw, 42px);
+}
+.patient-brand-emblem {
   position: relative;
-  width: min(100%, 168px);
-  aspect-ratio: 3.2;
-  margin: 0 auto;
+  width: 44px;
+  aspect-ratio: 1;
+  flex: none;
   overflow: hidden;
   mix-blend-mode: multiply;
 }
-.patient-brand img {
+.patient-brand-emblem img {
   position: absolute;
-  width: 114%;
+  display: block;
+  width: 345%;
   height: auto;
   max-width: none;
-  left: -7%;
+  left: -24%;
   top: 50%;
   transform: translateY(-50%);
-  display: block;
 }
