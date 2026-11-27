@@ -1,3 +1,4 @@
+import { currentSection, showAdminSection, hideAdminNavigation } from "./admin-layout.js";
 import { createClient } from "@supabase/supabase-js";
 import { patientDefaults, providerDefaults, contentWithDefaults, httpsUrl } from "../managed-content.js";
 
@@ -20,17 +21,33 @@ const area = (label, key, value = "") =>
   `<label class="field">${label}<textarea name="${key}">${escape(value)}</textarea></label>`;
 
 const groups = {
-  hero: ["Main banner", "banner"], promotions: ["Extra banners and ads", "banner"],
+  hero: ["Home banner · Slide 1", "banner"],
+  promotions: ["Home banners · Slides 2 & 3", "banner"],
+  providerBanner: ["Join as a Provider card", "banner"],
   helpFAQs: ["Help Center", "pair"], privacySections: ["Privacy Policy", "pair"],
   refundTerms: ["Refund Policy", "text"], about: ["About BANR", "text"],
   expertAnswers: ["Expert Q&A", "expert"],
 };
-function item(kind, value) {
+const singleBanner = key => key === "hero" || key === "providerBanner";
+function item(kind, value, key, index = 0) {
   let fields;
   if (kind === "banner") {
-    fields = input("Title", "title", value?.title) + area("Description", "description", value?.description) +
-      input("Image URL (HTTPS)", "imageUrl", value?.imageUrl, "url") + input("Button link (HTTPS)", "link", value?.link, "url") +
-      '<label><input name="sponsored" type="checkbox"' + (value?.sponsored === true ? " checked" : "") + '> Sponsored ad</label>';
+    fields = (key === "providerBanner" ? '<input type="hidden" name="title" value="Join as a Provider"><input type="hidden" name="description" value=""><input type="hidden" name="link" value=""><input type="checkbox" name="sponsored" hidden>' :
+      input("Title", "title", value?.title) + area("Description", "description", value?.description)) +
+      '<label class="field">Upload banner image from device<input type="file" data-banner-file accept="image/png,image/jpeg,image/webp"></label>' +
+      '<p class="text-small">Recommended: 1280 × 720 px (16:9). PNG, JPG or WebP. Maximum 5 MB.</p>' +
+      '<input type="hidden" name="imageUrl" value="' + escape(httpsUrl(value?.imageUrl)) + '">' +
+      '<input type="hidden" name="imageLayout" value="' + (value?.imageLayout === "full" ? "full" : "") + '">' +
+      (key === "providerBanner" ? '' : input("Button link (HTTPS)", "link", value?.link, "url") +
+      '<label><input name="sponsored" type="checkbox"' + (value?.sponsored === true ? " checked" : "") + '> Sponsored ad</label>') +
+      '<p data-banner-feedback role="status">' +
+      (httpsUrl(value?.imageUrl) ? 'Saved banner image.' : 'No image selected.') + '</p>' +
+      '<div class="banner-actions"><button class="primary" type="submit" data-confirm-banner>Confirm &amp; publish</button>' +
+      '<button type="button" data-clear-banner' + (httpsUrl(value?.imageUrl) ? '' : ' disabled') + '>Remove image</button>' +
+      '<a href="../" data-view-banner target="_blank" rel="noopener" hidden>View in Patient App</a></div>' +
+      '<p class="text-small">Confirm publishes all edits on this Patient App page.</p>' +
+      '<img data-banner-preview class="admin-banner-preview" alt="Banner preview"' +
+      (httpsUrl(value?.imageUrl) ? ' src="' + escape(httpsUrl(value?.imageUrl)) + '"' : ' hidden') + '>';
   } else if (kind === "pair") {
     fields = input("Heading or question", "heading", value?.[0]) + area("Text", "body", value?.[1]);
   } else if (kind === "expert") {
@@ -40,17 +57,19 @@ function item(kind, value) {
       '<label><input name="approved" type="checkbox"' + (value?.review?.status === "reviewed" && value?.review?.verified === true ? " checked" : "") +
       '> Publish after verifying the reviewer and getting approval</label>';
   } else fields = area("Text", "body", value);
-  return `<fieldset class="stack"><legend>Entry</legend>${fields}
-    <div><button type="button" data-move="-1">Move up</button> <button type="button" data-move="1">Move down</button>
-    <button type="button" data-remove>Remove</button></div></fieldset>`;
+  const controls = singleBanner(key) ? "" : '<div><button type="button" data-move="-1">Move up</button> ' +
+    '<button type="button" data-move="1">Move down</button> <button type="button" data-remove>Remove</button></div>';
+  return `<fieldset class="stack"><legend>${key === "hero" ? "Slide 1" : key === "promotions" ? "Slide " + (index + 2) : key === "providerBanner" ? "Provider card artwork" : "Entry"}</legend>${fields}${controls}</fieldset>`;
 }
 
 function group(key, value) {
   const [label, kind] = groups[key];
-  const entries = key === "hero" ? (value ? [value] : []) : value;
+  const entries = key === "providerBanner" ? [value] : key === "hero" ? (value ? [value] : []) : value;
   return `<details class="raised" data-group="${key}"><summary>${label}</summary>
-    <div class="stack items">${entries.map(entry => item(kind, entry)).join("")}</div>
-    <button type="button" data-add>${key === "hero" ? "Add custom main banner" : "Add entry"}</button></details>`;
+    ${key === "promotions" ? '<p>Upload the image for Slide 2 and Slide 3 below.</p>' : ""}
+    <div class="stack items">${entries.map((entry, index) => item(kind, entry, key, index)).join("")}</div>
+    ${key === "providerBanner" ? "" : '<button type="button" data-add>' +
+      (key === "hero" ? "Add custom Slide 1" : key === "promotions" ? "Add another slide" : "Add entry") + '</button>'}</details>`;
 }
 
 function readItem(kind, entry) {
@@ -61,7 +80,7 @@ function readItem(kind, entry) {
     if ((imageUrl && !httpsUrl(imageUrl)) || (link && !httpsUrl(link))) throw new Error("Banner links must use HTTPS.");
     const title = value("title");
     if (!title) throw new Error("Enter a title for each banner.");
-    return { title, description: value("description"), imageUrl, link, sponsored: get("sponsored").checked };
+    return { title, description: value("description"), imageUrl, imageLayout: value("imageLayout"), link, sponsored: get("sponsored").checked };
   }
   if (kind === "pair") return [value("heading"), value("body")];
   if (kind === "expert") {
@@ -86,6 +105,7 @@ async function data(request) {
 const admin = (p_action, p_data = {}) => data(client.rpc("banr_admin_session", { p_token: token, p_action, p_data }));
 
 function login(setup = false) {
+  hideAdminNavigation();
   signOut.hidden = true;
   screen.innerHTML = '<form class="panel raised stack" data-form="login"><h2>' + (setup ? 'Set Super Admin Password' : 'Super Admin Sign In') + '</h2>' +
     '<label class="field">Username<input name="username" autocomplete="username" required minlength="3" maxlength="32" autocapitalize="none" spellcheck="false"></label>' +
@@ -97,14 +117,14 @@ function login(setup = false) {
 }
 
 async function dashboard() {
-  signOut.hidden = false;
   const settings = await admin("load");
   const content = await Promise.all(Object.keys(defaults).map(async key =>
     contentWithDefaults(defaults[key], await admin("content", { key }))));
   const [patient, provider] = content;
   screen.innerHTML = '<form class="panel raised stack" data-form="patient"><h2>Patient App</h2>' +
-    input("Header subtitle", "subtitle", patient.subtitle) + input("Support email", "supportEmail", patient.supportEmail, "email") +
-    Object.keys(groups).map(key => group(key, patient[key])).join("") +
+    '<div class="admin-grid">' + input("Header subtitle", "subtitle", patient.subtitle) +
+    input("Support email", "supportEmail", patient.supportEmail, "email") + '</div>' +
+    '<div class="admin-grid">' + Object.keys(groups).map(key => group(key, patient[key])).join("") + '</div>' +
     '<p>Only published Expert Q&A entries are sent to the public app. Keep drafts out of this form.</p>' +
     button("Publish Patient Content", "submit") + '</form>' +
     '<form class="panel raised stack" data-form="provider"><h2>Provider Portal</h2>' +
@@ -118,7 +138,19 @@ async function dashboard() {
     '<div><button class="primary" value="grant_staff">Grant Access</button> <button value="revoke_staff">Remove Access</button></div>' +
     '<div data-staff-list class="stack"></div></form>';
   showStaff(settings.staff);
+  signOut.hidden = false;
+  syncSection();
 }
+function syncSection() {
+  if (!screen.querySelector('[data-form="patient"]')) return;
+  const selected = currentSection(["patient", "provider", "staff"], "patient");
+  showAdminSection(selected);
+  for (const form of screen.querySelectorAll("form[data-form]")) form.hidden = form.dataset.form !== selected;
+}
+window.addEventListener("hashchange", () => {
+  syncSection();
+  document.querySelector("#page-title").focus();
+});
 
 function showStaff(staff) {
   screen.querySelector("[data-staff-list]").innerHTML = staff.length
@@ -127,16 +159,79 @@ function showStaff(staff) {
     : '<p>No clinic staff assigned.</p>';
 }
 let busy = false;
-async function run(action) {
+async function run(action, feedback) {
   if (busy) return;
   busy = true;
   error.textContent = status.textContent = "";
   try { await action(); }
-  catch (failure) { error.textContent = failure.message || "Action failed."; }
+  catch (failure) {
+    const message = failure.message || "Action failed.";
+    error.textContent = message;
+    if (feedback) feedback.textContent = message;
+  }
   finally { busy = false; }
 }
 
+let pendingBannerUploads = 0;
+screen.addEventListener("change", async event => {
+  const picker = event.target.closest("[data-banner-file]");
+  const file = picker?.files[0];
+  if (!file) return;
+  const entry = picker.closest("fieldset");
+  const feedback = entry.querySelector("[data-banner-feedback]");
+  picker.disabled = true;
+  pendingBannerUploads++;
+  try {
+    if (!["image/png","image/jpeg","image/webp"].includes(file.type) || !file.size || file.size > 5*1024*1024) {
+      throw new Error("Choose a PNG, JPG or WebP image up to 5 MB.");
+    }
+    const bitmap = await createImageBitmap(file);
+    const dimensions = bitmap.width + " × " + bitmap.height + " px";
+    bitmap.close();
+    feedback.textContent = "Uploading…";
+    const body = new FormData();
+    body.set("image",file);
+    const result = await client.functions.invoke("banr-banner-upload", {
+      body, headers: { "x-banr-admin-session": token },
+    });
+    if (result.error) {
+      const details = await result.error.context?.json().catch(()=>null);
+      throw new Error(details?.error || "Upload failed. Try again.");
+    }
+    const uploaded = httpsUrl(result.data?.url);
+    if (!uploaded) throw new Error("Upload did not return an image.");
+    entry.querySelector('[name="imageUrl"]').value = uploaded;
+    entry.querySelector('[name="imageLayout"]').value = "full";
+    const preview = entry.querySelector("[data-banner-preview]");
+    preview.src = uploaded;
+    preview.hidden = false;
+    entry.querySelector("[data-clear-banner]").disabled = false;
+    entry.querySelector("[data-view-banner]").hidden = true;
+    feedback.textContent = "Uploaded · " + dimensions + ". Ready to publish.";
+  } catch (failure) {
+    feedback.textContent = failure.message || "Upload failed.";
+  } finally {
+    pendingBannerUploads--;
+    picker.value = "";
+    picker.disabled = false;
+  }
+});
+
 screen.addEventListener("click", event => {
+  const clear = event.target.closest("[data-clear-banner]");
+  if (clear) {
+    const entry = clear.closest("fieldset");
+    if (entry.querySelector("[data-banner-file]").disabled) return;
+    entry.querySelector('[name="imageUrl"]').value = "";
+    entry.querySelector('[name="imageLayout"]').value = "";
+    const preview = entry.querySelector("[data-banner-preview]");
+    preview.removeAttribute("src");
+    preview.hidden = true;
+    clear.disabled = true;
+    entry.querySelector("[data-view-banner]").hidden = true;
+    entry.querySelector("[data-banner-feedback]").textContent = "Image removed from draft. Confirm & publish to apply.";
+    return;
+  }
   const mode = event.target.closest("[data-login-mode]");
   if (mode) { error.textContent = ""; login(mode.dataset.loginMode === "setup"); return; }
   const target = event.target.closest("[data-add],[data-remove],[data-move]");
@@ -145,17 +240,23 @@ screen.addEventListener("click", event => {
     const group = target.closest("[data-group]");
     const entries = group.querySelector(".items");
     if (group.dataset.group === "hero" && entries.childElementCount) return;
-    entries.insertAdjacentHTML("beforeend", item(groups[group.dataset.group][1]));
+    entries.insertAdjacentHTML("beforeend", item(groups[group.dataset.group][1], undefined, group.dataset.group, entries.childElementCount));
   } else {
     const entry = target.closest("fieldset");
+    const group = entry.closest("[data-group]");
     if (target.hasAttribute("data-remove")) entry.remove();
     else if (target.dataset.move === "-1" && entry.previousElementSibling) entry.before(entry.previousElementSibling);
     else if (target.dataset.move === "1" && entry.nextElementSibling) entry.after(entry.nextElementSibling);
+    if (group.dataset.group === "promotions") {
+      group.querySelectorAll("legend").forEach((legend, index) => { legend.textContent = "Slide " + (index + 2); });
+    }
   }
 });
 
 screen.addEventListener("submit", event => {
   event.preventDefault();
+  const entry = event.submitter?.closest("[data-group] fieldset");
+  const bannerFeedback = entry?.querySelector("[data-banner-feedback]");
   void run(async () => {
     const form = event.target;
     const key = form.dataset.form;
@@ -183,6 +284,7 @@ screen.addEventListener("submit", event => {
       status.textContent = action === "grant_staff" ? "Clinic access granted." : "Clinic access removed.";
       return;
     }
+    if (key === "patient" && pendingBannerUploads) throw new Error("Wait for the banner image to finish uploading.");
     const payload = { subtitle: raw.subtitle.trim() };
     if (key === "provider") payload.notice = raw.notice.trim();
     else {
@@ -190,13 +292,28 @@ screen.addEventListener("submit", event => {
       for (const [name, [, kind]] of Object.entries(groups)) {
         const entries = Array.from(form.querySelectorAll('[data-group="' + name + '"] fieldset'),
           entry => readItem(kind, entry));
-        payload[name] = name === "hero" ? (entries[0] ?? null) : name === "expertAnswers"
+        payload[name] = name === "providerBanner" ? (entries[0]?.imageUrl ? entries[0] : null) :
+          name === "hero" ? (entries[0] ?? null) : name === "expertAnswers"
           ? entries.filter(entry => entry.review?.verified) : entries;
       }
     }
-    await admin("save_content", { key, value: contentWithDefaults(defaults[key], payload, true) });
-    status.textContent = "Published. Changes appear when the app is reopened.";
-  });
+    const value = contentWithDefaults(defaults[key], payload, true);
+    if (bannerFeedback) bannerFeedback.textContent = "Publishing to Patient App…";
+    await admin("save_content", { key, value });
+    if (key === "patient") {
+      const published = await data(client.rpc("banr_app_content", { p_key: "patient" }));
+      const comparable = content => [content?.hero, content?.providerBanner, ...(content?.promotions ?? [])]
+        .map(banner => banner ? [banner.title, banner.description ?? "", banner.imageUrl ?? "", banner.imageLayout ?? "", banner.link ?? "", banner.sponsored === true] : null);
+      if (JSON.stringify(comparable(published)) !== JSON.stringify(comparable(value))) {
+        throw new Error("Saved, but the Patient App could not confirm the banner update. Try opening the app again.");
+      }
+      for (const row of form.querySelectorAll("[data-banner-feedback]")) {
+        row.textContent = "Published to Patient App.";
+        row.closest("fieldset").querySelector("[data-view-banner]").hidden = false;
+      }
+      status.textContent = "Published and verified. Open the Patient App to see your changes.";
+    } else status.textContent = "Published. Changes appear when the app is reopened.";
+  }, bannerFeedback);
 });
 
 signOut.addEventListener("click", () => void run(async () => {

@@ -78,3 +78,101 @@
 .faq { margin: 0; }
 .faq summary { cursor: pointer; font-weight: 700; }
 .faq p { margin-top: 8px; }
+
+.hero.hero-uploaded{min-height:0;padding:0;background:#dff1e8}.hero-uploaded img{display:block;position:static;width:100%;aspect-ratio:16/9;object-fit:contain;mask-image:none;opacity:1}.hero-uploaded .sponsored{position:absolute;right:10px;top:8px;margin:0;padding:4px 8px;border-radius:8px;background:#064b36;color:#fff}
+
+.provider-join-artwork{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#dff1e8;border-radius:12px}
+
+/* Keep the blur on the patient background layer. */
+.app:has(> #screen) { isolation: isolate; }
+.app:has(> #screen)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: inherit;
+  filter: blur(5px);
+  clip-path: inset(0 round var(--patient-background-radius, 0px));
+}
+@media (min-width: 660px) {
+  .app:has(> #screen) { --patient-background-radius: 29px; }
+}
+
+.app:has(> #screen) {
+  --patient-ink: #151515;
+  --muted: var(--patient-ink);
+  color: var(--patient-ink);
+}
+.app:has(> #screen) :is(.brand, .subtitle, .iconbtn, .search, .search input, .link, .tile, .chev, .number, .notice, .subtle, .field input, .field select, .nav button[aria-current=page]) {
+  color: var(--patient-ink);
+}
+.app:has(> #screen) a { color: var(--patient-ink); }
+.app:has(> #screen) .hero a { color: inherit; }
+.app:has(> #screen) .search input::placeholder { color: var(--patient-ink); opacity: .8; }
+
+.patient-brand-emblem {
+  position: relative;
+  width: 44px;
+  aspect-ratio: 1;
+  flex: none;
+  overflow: hidden;
+  mix-blend-mode: multiply;
+}
+.patient-brand-emblem img {
+  position: absolute;
+  display: block;
+  width: 345%;
+  height: auto;
+  max-width: none;
+  left: -24%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.app:has(> #screen) > .compact-home-header {
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  padding: 8px 22px 3px;
+}
+.compact-home-header .patient-brand-emblem { width: 38px; }
+.app:has(> .compact-home-header) > #screen { padding-top: 4px; }
+.app:has(> .compact-home-header) .intro { margin-bottom: 12px; }
+@media (max-width: 360px) {
+  .app:has(> #screen) > .compact-home-header { padding-inline: 14px; }
+}
+
+.app:has(> #screen) {
+  --raised: inset 0 2px 3px #ffffffd0, inset 0 -3px 5px #5a9b8126,
+    0 4px 6px #194c3636, 0 10px 18px #275b4547;
+}
+.app:has(> #screen) .hero {
+  box-shadow: inset 0 2px 3px #d9ffe48c, inset 0 -4px 7px #002d217d,
+    0 5px 8px #0a3d2a52, 0 12px 21px #235b436b;
+}
+.app:has(> #screen) .primary {
+  box-shadow: inset 0 2px 2px #b4f3d06d, inset 0 -3px 5px #01291e80,
+    0 4px 6px #174a3752, 0 10px 17px #174a375e;
+}
+.app:has(> #screen) :is(.chip, .stat) {
+  box-shadow: inset 0 2px 2px #f5fff2df, 0 4px 7px #24554036, 0 7px 12px #24554032;
+}
+.app:has(> #screen) .chip[aria-pressed=true] {
+  box-shadow: inset 0 2px 4px #003d2b75, 0 4px 8px #24554057;
+}
+.app:has(> #screen) .facility img {
+  box-shadow: 0 3px 6px #1c55394a, 0 5px 10px #1c55392e;
+}
+.app:has(> #screen) .nav {
+  box-shadow: inset 0 2px 3px #bdf4d594, inset 0 -4px 8px #00271bcc,
+    0 -4px 9px #25523f40, 0 -9px 22px #25523f50;
+}
+.app:has(> #screen) .nav button[aria-current=page] {
+  box-shadow: inset 0 2px 3px #ffffffe0, inset 0 -3px 5px #1c6e4359,
+    0 3px 5px #002316b0, 0 7px 12px #002316bf;
+}
+
+.facility:not(:has(> figure)){grid-template-columns:minmax(0,1fr) auto;padding:12px 14px}
+#screen .field textarea{width:100%;min-height:100px;font:inherit;padding:12px;border:1px solid #a9c8ba;border-radius:12px;background:#eff8f2;color:#151515}
+#screen [aria-label="Directory filters"]{flex-wrap:wrap}
+#screen [aria-label="Directory filters"] .field{min-width:115px;margin:0}
