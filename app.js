@@ -57,7 +57,8 @@ const waitEstimate=b=>{
  return {ahead:b.patients_ahead,minutes:b.opd_status==="paused"||remaining==null?null:Math.ceil(remaining+b.patients_ahead*b.consultation_minutes)};
 };
 let page="home",previous=[],selected={},activeBooking=null,authReturn="details",pendingPhone="",query="",category="",historyTab="upcoming";
-let walkInFacility=new URLSearchParams(location.search).get("facility");
+const urlParams=new URLSearchParams(location.search);
+let walkInFacility=urlParams.get("facility");
 const facility=()=>facilities.find(item=>item.id===selected.facility);
 const doctor=()=>facility()?.doctors[selected.doctor];
 const signedIn=()=>live?Boolean(user):Boolean(phone);
@@ -97,7 +98,7 @@ function shell(){
  '<button type="button" data-action="nav:'+id+'" '+(current===id?'aria-current="page"':'')+'>'+icon(img)+label+'</button>').join("");
 }
 function card(item){
- return '<button class="facility raised" data-action="facility:'+item.id+'"><figure>'+image(item.img,"")+'</figure><div><h3>'+esc(item.name)+'</h3><p>'+esc(item.distance||item.area)+' · '+esc(item.hours)+'</p><span class="tag">'+esc(item.doctors.map(d=>d.specialty).join(", "))+'</span></div>'+icon("chevron","chev")+'</button>';
+ return '<button class="facility raised" data-action="facility:'+item.id+'"><figure>'+image(item.img,"")+'</figure><div><h3>'+esc(item.name)+'</h3><p>'+esc(item.distance||item.area)+' · '+esc(item.hours)+'</p><span class="tag">'+esc(item.directory_only?"Directory listing":item.doctors.map(d=>d.specialty).join(", "))+'</span></div>'+icon("chevron","chev")+'</button>';
 }
 function results(){
  if(catalogError)return '<p class="panel raised" role="alert">'+esc(catalogError)+'</p>'+btn("Retry","retry-catalog","link");
@@ -105,7 +106,7 @@ function results(){
  const value=query.trim().toLowerCase();
  const matches=facilities.filter(f=>{
  const haystack=[f.name,f.area,f.type,...f.doctors.flatMap(d=>[d.name,d.specialty])].join(" ").toLowerCase();
- return (!category||haystack.includes(category.toLowerCase()))&&(!value||haystack.includes(value))&&(!live||f.area.toLowerCase().includes(locationName.toLowerCase())||f.address.toLowerCase().includes(locationName.toLowerCase()));
+ return (!category||haystack.includes(category.toLowerCase()))&&(!value||haystack.includes(value))&&(!live||(f.directory_only&&value)||f.area.toLowerCase().includes(locationName.toLowerCase())||f.address.toLowerCase().includes(locationName.toLowerCase()));
  });
  if(value||category) return '<div class="sectionhead"><h2>'+(esc(category)||"Search results")+'</h2>'+btn("Clear","clear","link")+'</div>'+
  (matches.length?matches.map(card).join(""):'<p class="panel raised">No clinics or hospitals match your search.</p>');
@@ -254,6 +255,14 @@ function doctorOpdStatus(id){
 }
 function detail(){
  const f=facility();
+ if(f.directory_only){
+  const map=httpsUrl(f.maps_url);
+  const phone=/^\+?[\d ]{8,17}$/.test(f.contact??"")?f.contact.replaceAll(" ",""):"";
+  return pageTitle(f.name)+'<section class="panel raised stack"><p>'+esc(f.address)+'</p><p>'+esc(f.hours)+'</p>'+
+    (phone?'<a class="link" href="tel:'+esc(phone)+'">Call '+esc(f.contact)+'</a>':'')+
+    (map?'<a class="link" href="'+esc(map)+'" target="_blank" rel="noopener noreferrer">View on Google Maps</a>':'')+
+    '<p class="notice">OPD booking is unavailable on BANR for this clinic.</p></section>';
+ }
  const directions=live?'<a class="link" target="_blank" rel="noopener noreferrer" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(f.latitude!=null&&f.longitude!=null?f.latitude+","+f.longitude:f.address)+'">Get Directions</a>':"";
  return pageTitle(f.name)+'<div class="panel raised stack"><div class="photo">'+image(f.img,"")+'</div><p>'+esc(live?f.address:f.area+" · "+f.distance)+'</p><p>'+esc(f.hours)+'</p>'+(f.contact?'<p>Contact: '+esc(f.contact)+'</p>':'')+directions+'</div><h2>Doctors at '+esc(f.name)+'</h2>'+
  f.doctors.map((d,i)=>'<article class="panel raised stack"><h3>'+esc(d.name)+'</h3><p class="subtle">'+esc(d.specialty)+' · ₹'+d.fee+'</p>'+(live?'<p class="tag">'+doctorOpdStatus(d.id)+'</p>':'')+btn("Book Appointment","book:"+i)+'</article>').join("");
@@ -450,7 +459,7 @@ document.addEventListener("click",async event=>{
  case "location":case "notifications":case "specialties":go(action);break;
  case "clear":category="";query="";render();document.getElementById("search").focus();break;
  case "filter":category=value;query="";go("home",true);document.getElementById("results").scrollIntoView({block:"center"});break;
- case "facility":selected={facility:value};facilitySessions=null;go("facility");if(live)void refreshFacilitySessions(facility());break;
+ case "facility":selected={facility:value};facilitySessions=null;go("facility");if(live&&!facility()?.directory_only)void refreshFacilitySessions(facility());break;
  case "book":selected={facility:selected.facility,doctor:Number(value),date:dayKey()};await openSchedule();break;
  case "retry-schedule":await openSchedule();break;
  case "retry-catalog":await loadCatalog();render();break;
@@ -636,7 +645,7 @@ async function start(){
   });
   let refreshingFacility=false;
   setInterval(async()=>{
-   if(page!=="facility"||refreshingFacility)return;
+   if(page!=="facility"||refreshingFacility||facility()?.directory_only)return;
    refreshingFacility=true;
    try{await refreshFacilitySessions(facility());}
    finally{refreshingFacility=false;}
@@ -650,7 +659,9 @@ async function start(){
    finally{refreshing=false;if(["token","appointments","walkin"].includes(page)&&!busy)render();}
   },5000);
  }
- if((live&&/^[a-z0-9-]+$/.test(walkInFacility??""))||facilities.some(f=>f.id===walkInFacility)){
+ const listing=facilities.find(f=>f.directory_only&&(f.id===urlParams.get("listing")||f.id===walkInFacility));
+ if(listing){selected={facility:listing.id};page="facility";}
+ else if((live&&/^[a-z0-9-]+$/.test(walkInFacility??""))||facilities.some(f=>f.id===walkInFacility)){
   page="walkin";
   const found=walkins();
   if(found.length===1){activeBooking=found[0];page="token";}
