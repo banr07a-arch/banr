@@ -213,7 +213,9 @@ function about(){
  content.about.map(copy=>'<p>'+esc(copy)+'</p>').join("")+'</section>';
 }
 function joinProvider(){
- return '<a class="panel raised stack" href="/onboarding/"><strong>Join as a Provider</strong><span>Register your clinic or hospital on BNR</span></a>';
+ const imageUrl=httpsUrl(content.providerBanner?.imageUrl);
+ const artwork=imageUrl?'<img class="provider-join-artwork" src="'+esc(imageUrl)+'" alt="" loading="lazy">':'';
+ return '<a class="panel raised stack provider-join" href="/onboarding/">'+artwork+'<strong>Join as a Provider</strong><span>Register your clinic or hospital on BANR</span></a>';
 }
 function home(){
  return '<div class="intro row"><h1 tabindex="-1">Home</h1>'+btn(icon("pin")+esc(locationName)+icon("down"),"location","place raised")+'</div>'+

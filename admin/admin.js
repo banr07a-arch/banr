@@ -21,21 +21,25 @@ const area = (label, key, value = "") =>
   `<label class="field">${label}<textarea name="${key}">${escape(value)}</textarea></label>`;
 
 const groups = {
-  hero: ["Main banner", "banner"], promotions: ["Extra banners and ads", "banner"],
+  hero: ["Home banner · Slide 1", "banner"],
+  promotions: ["Home banners · Slides 2 & 3", "banner"],
+  providerBanner: ["Join as a Provider card", "banner"],
   helpFAQs: ["Help Center", "pair"], privacySections: ["Privacy Policy", "pair"],
   refundTerms: ["Refund Policy", "text"], about: ["About BANR", "text"],
   expertAnswers: ["Expert Q&A", "expert"],
 };
-function item(kind, value, mainBanner = false) {
+const singleBanner = key => key === "hero" || key === "providerBanner";
+function item(kind, value, key, index = 0) {
   let fields;
   if (kind === "banner") {
-    fields = input("Title", "title", value?.title) + area("Description", "description", value?.description) +
+    fields = (key === "providerBanner" ? '<input type="hidden" name="title" value="Join as a Provider"><input type="hidden" name="description" value=""><input type="hidden" name="link" value=""><input type="checkbox" name="sponsored" hidden>' :
+      input("Title", "title", value?.title) + area("Description", "description", value?.description)) +
       '<label class="field">Upload banner image from device<input type="file" data-banner-file accept="image/png,image/jpeg,image/webp"></label>' +
       '<p class="text-small">Recommended: 1280 × 720 px (16:9). PNG, JPG or WebP. Maximum 5 MB.</p>' +
       '<input type="hidden" name="imageUrl" value="' + escape(httpsUrl(value?.imageUrl)) + '">' +
       '<input type="hidden" name="imageLayout" value="' + (value?.imageLayout === "full" ? "full" : "") + '">' +
-      input("Button link (HTTPS)", "link", value?.link, "url") +
-      '<label><input name="sponsored" type="checkbox"' + (value?.sponsored === true ? " checked" : "") + '> Sponsored ad</label>' +
+      (key === "providerBanner" ? '' : input("Button link (HTTPS)", "link", value?.link, "url") +
+      '<label><input name="sponsored" type="checkbox"' + (value?.sponsored === true ? " checked" : "") + '> Sponsored ad</label>') +
       '<p data-banner-feedback role="status">' +
       (httpsUrl(value?.imageUrl) ? 'Saved banner image.' : 'No image selected.') + '</p>' +
       '<div class="banner-actions"><button class="primary" type="submit" data-confirm-banner>Confirm &amp; publish</button>' +
@@ -53,17 +57,19 @@ function item(kind, value, mainBanner = false) {
       '<label><input name="approved" type="checkbox"' + (value?.review?.status === "reviewed" && value?.review?.verified === true ? " checked" : "") +
       '> Publish after verifying the reviewer and getting approval</label>';
   } else fields = area("Text", "body", value);
-  const controls = mainBanner ? "" : '<div><button type="button" data-move="-1">Move up</button> ' +
+  const controls = singleBanner(key) ? "" : '<div><button type="button" data-move="-1">Move up</button> ' +
     '<button type="button" data-move="1">Move down</button> <button type="button" data-remove>Remove</button></div>';
-  return `<fieldset class="stack"><legend>${mainBanner ? "Main banner settings" : "Entry"}</legend>${fields}${controls}</fieldset>`;
+  return `<fieldset class="stack"><legend>${key === "hero" ? "Slide 1" : key === "promotions" ? "Slide " + (index + 2) : key === "providerBanner" ? "Provider card artwork" : "Entry"}</legend>${fields}${controls}</fieldset>`;
 }
 
 function group(key, value) {
   const [label, kind] = groups[key];
-  const entries = key === "hero" ? (value ? [value] : []) : value;
+  const entries = key === "providerBanner" ? [value] : key === "hero" ? (value ? [value] : []) : value;
   return `<details class="raised" data-group="${key}"><summary>${label}</summary>
-    <div class="stack items">${entries.map(entry => item(kind, entry, key === "hero")).join("")}</div>
-    <button type="button" data-add>${key === "hero" ? "Add custom main banner" : "Add entry"}</button></details>`;
+    ${key === "promotions" ? '<p>Upload the image for Slide 2 and Slide 3 below.</p>' : ""}
+    <div class="stack items">${entries.map((entry, index) => item(kind, entry, key, index)).join("")}</div>
+    ${key === "providerBanner" ? "" : '<button type="button" data-add>' +
+      (key === "hero" ? "Add custom Slide 1" : key === "promotions" ? "Add another slide" : "Add entry") + '</button>'}</details>`;
 }
 
 function readItem(kind, entry) {
@@ -234,12 +240,16 @@ screen.addEventListener("click", event => {
     const group = target.closest("[data-group]");
     const entries = group.querySelector(".items");
     if (group.dataset.group === "hero" && entries.childElementCount) return;
-    entries.insertAdjacentHTML("beforeend", item(groups[group.dataset.group][1], undefined, group.dataset.group === "hero"));
+    entries.insertAdjacentHTML("beforeend", item(groups[group.dataset.group][1], undefined, group.dataset.group, entries.childElementCount));
   } else {
     const entry = target.closest("fieldset");
+    const group = entry.closest("[data-group]");
     if (target.hasAttribute("data-remove")) entry.remove();
     else if (target.dataset.move === "-1" && entry.previousElementSibling) entry.before(entry.previousElementSibling);
     else if (target.dataset.move === "1" && entry.nextElementSibling) entry.after(entry.nextElementSibling);
+    if (group.dataset.group === "promotions") {
+      group.querySelectorAll("legend").forEach((legend, index) => { legend.textContent = "Slide " + (index + 2); });
+    }
   }
 });
 
@@ -282,7 +292,8 @@ screen.addEventListener("submit", event => {
       for (const [name, [, kind]] of Object.entries(groups)) {
         const entries = Array.from(form.querySelectorAll('[data-group="' + name + '"] fieldset'),
           entry => readItem(kind, entry));
-        payload[name] = name === "hero" ? (entries[0] ?? null) : name === "expertAnswers"
+        payload[name] = name === "providerBanner" ? (entries[0]?.imageUrl ? entries[0] : null) :
+          name === "hero" ? (entries[0] ?? null) : name === "expertAnswers"
           ? entries.filter(entry => entry.review?.verified) : entries;
       }
     }
@@ -291,7 +302,7 @@ screen.addEventListener("submit", event => {
     await admin("save_content", { key, value });
     if (key === "patient") {
       const published = await data(client.rpc("banr_app_content", { p_key: "patient" }));
-      const comparable = content => [content?.hero, ...(content?.promotions ?? [])]
+      const comparable = content => [content?.hero, content?.providerBanner, ...(content?.promotions ?? [])]
         .map(banner => banner ? [banner.title, banner.description ?? "", banner.imageUrl ?? "", banner.imageLayout ?? "", banner.link ?? "", banner.sponsored === true] : null);
       if (JSON.stringify(comparable(published)) !== JSON.stringify(comparable(value))) {
         throw new Error("Saved, but the Patient App could not confirm the banner update. Try opening the app again.");

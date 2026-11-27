@@ -4,6 +4,7 @@ export const patientDefaults = {
   subtitle: "Save Your Time",
   supportEmail, refundTerms, promotions, expertAnswers, helpFAQs, privacySections,
   hero: null,
+  providerBanner: null,
   about: [
     "BANR helps you find clinics and hospitals in your area, choose a doctor and book an available OPD visit.",
     "After booking, open Appointments to find your visit or My Token to see your token, the latest queue status and an estimated wait when available.",
@@ -25,6 +26,7 @@ const rules = {
   notice: value => typeof value === "string",
   supportEmail: value => typeof value === "string" && (!value || /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value)),
   hero: value => value === null || banner(value),
+  providerBanner: value => value === null || (banner(value) && Boolean(httpsUrl(value.imageUrl))),
   promotions: value => Array.isArray(value) && value.every(banner),
   expertAnswers: value => Array.isArray(value) && value.every(expert),
   helpFAQs: pairs, privacySections: pairs, refundTerms: strings, about: strings,
