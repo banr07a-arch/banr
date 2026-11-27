@@ -34,9 +34,14 @@ function item(kind, value) {
       '<p class="text-small">Recommended: 1280 × 720 px (16:9). PNG, JPG or WebP. Maximum 5 MB.</p>' +
       '<input type="hidden" name="imageUrl" value="' + escape(httpsUrl(value?.imageUrl)) + '">' +
       '<input type="hidden" name="imageLayout" value="' + (value?.imageLayout === "full" ? "full" : "") + '">' +
-      '<p data-banner-feedback role="status"></p><img data-banner-preview class="admin-banner-preview" alt="Banner preview"' +
+      '<p data-banner-feedback role="status">' +
+      (httpsUrl(value?.imageUrl) ? 'Saved banner image.' : 'No image selected.') + '</p>' +
+      '<div class="banner-actions"><button class="primary" type="submit" data-confirm-banner>Confirm &amp; publish</button>' +
+      '<button type="button" data-clear-banner' + (httpsUrl(value?.imageUrl) ? '' : ' disabled') + '>Remove image</button>' +
+      '<a href="../" data-view-banner target="_blank" rel="noopener" hidden>View in Patient App</a></div>' +
+      '<p class="text-small">Confirm publishes all edits on this Patient App page.</p>' +
+      '<img data-banner-preview class="admin-banner-preview" alt="Banner preview"' +
       (httpsUrl(value?.imageUrl) ? ' src="' + escape(httpsUrl(value?.imageUrl)) + '"' : ' hidden') + '>' +
-      '<button type="button" data-clear-banner' + (httpsUrl(value?.imageUrl) ? '' : ' hidden') + '>Remove image</button>' +
       input("Button link (HTTPS)", "link", value?.link, "url") +
       '<label><input name="sponsored" type="checkbox"' + (value?.sponsored === true ? " checked" : "") + '> Sponsored ad</label>';
   } else if (kind === "pair") {
@@ -148,12 +153,16 @@ function showStaff(staff) {
     : '<p>No clinic staff assigned.</p>';
 }
 let busy = false;
-async function run(action) {
+async function run(action, feedback) {
   if (busy) return;
   busy = true;
   error.textContent = status.textContent = "";
   try { await action(); }
-  catch (failure) { error.textContent = failure.message || "Action failed."; }
+  catch (failure) {
+    const message = failure.message || "Action failed.";
+    error.textContent = message;
+    if (feedback) feedback.textContent = message;
+  }
   finally { busy = false; }
 }
 
@@ -190,8 +199,9 @@ screen.addEventListener("change", async event => {
     const preview = entry.querySelector("[data-banner-preview]");
     preview.src = uploaded;
     preview.hidden = false;
-    entry.querySelector("[data-clear-banner]").hidden = false;
-    feedback.textContent = "Uploaded · " + dimensions + ". Publish Patient Content to apply.";
+    entry.querySelector("[data-clear-banner]").disabled = false;
+    entry.querySelector("[data-view-banner]").hidden = true;
+    feedback.textContent = "Uploaded · " + dimensions + ". Ready to publish.";
   } catch (failure) {
     feedback.textContent = failure.message || "Upload failed.";
   } finally {
@@ -211,8 +221,9 @@ screen.addEventListener("click", event => {
     const preview = entry.querySelector("[data-banner-preview]");
     preview.removeAttribute("src");
     preview.hidden = true;
-    clear.hidden = true;
-    entry.querySelector("[data-banner-feedback]").textContent = "Image removed from draft.";
+    clear.disabled = true;
+    entry.querySelector("[data-view-banner]").hidden = true;
+    entry.querySelector("[data-banner-feedback]").textContent = "Image removed from draft. Confirm & publish to apply.";
     return;
   }
   const mode = event.target.closest("[data-login-mode]");
@@ -234,6 +245,8 @@ screen.addEventListener("click", event => {
 
 screen.addEventListener("submit", event => {
   event.preventDefault();
+  const entry = event.submitter?.closest("[data-group] fieldset");
+  const bannerFeedback = entry?.querySelector("[data-banner-feedback]");
   void run(async () => {
     const form = event.target;
     const key = form.dataset.form;
@@ -273,9 +286,23 @@ screen.addEventListener("submit", event => {
           ? entries.filter(entry => entry.review?.verified) : entries;
       }
     }
-    await admin("save_content", { key, value: contentWithDefaults(defaults[key], payload, true) });
-    status.textContent = "Published. Changes appear when the app is reopened.";
-  });
+    const value = contentWithDefaults(defaults[key], payload, true);
+    if (bannerFeedback) bannerFeedback.textContent = "Publishing to Patient App…";
+    await admin("save_content", { key, value });
+    if (key === "patient") {
+      const published = await data(client.rpc("banr_app_content", { p_key: "patient" }));
+      const comparable = content => [content?.hero, ...(content?.promotions ?? [])]
+        .map(banner => banner ? [banner.title, banner.imageUrl ?? "", banner.imageLayout ?? ""] : null);
+      if (JSON.stringify(comparable(published)) !== JSON.stringify(comparable(value))) {
+        throw new Error("Saved, but the Patient App could not confirm the banner update. Try opening the app again.");
+      }
+      for (const row of form.querySelectorAll("[data-banner-feedback]")) {
+        row.textContent = "Published to Patient App.";
+        row.closest("fieldset").querySelector("[data-view-banner]").hidden = false;
+      }
+      status.textContent = "Published and verified. Open the Patient App to see your changes.";
+    } else status.textContent = "Published. Changes appear when the app is reopened.";
+  }, bannerFeedback);
 });
 
 signOut.addEventListener("click", () => void run(async () => {
