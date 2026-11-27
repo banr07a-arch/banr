@@ -82,10 +82,15 @@ function go(next,reset=false){
  scrollTo(0,0);
  screen.querySelector("h1")?.focus({preventScroll:true});
 }
+const brandEmblem = new URL("./assets/banr-official-logo.jpg", import.meta.url).href;
 function shell(){
- topbar.innerHTML=(previous.length?btn(icon("back"),"back","iconbtn"):"<span></span>")+
- '<div><div class="brand">BANR</div><div class="subtitle">'+esc(content.subtitle)+'</div></div>'+
- '<button class="iconbtn" type="button" data-action="notifications" aria-label="Notifications">'+icon("bell")+'</button>';
+ const compact = page==="home";
+ topbar.classList.toggle("compact-home-header",compact);
+ const back = previous.length?btn(icon("back"),"back","iconbtn"):"<span></span>";
+ const bell = '<button class="iconbtn" type="button" data-action="notifications" aria-label="Notifications">'+icon("bell")+'</button>';
+ topbar.innerHTML=compact
+  ? '<span class="patient-brand-emblem"><img src="'+brandEmblem+'" alt="BANR" width="720" height="540"></span>'+bell
+  : back+'<div><div class="brand">BANR</div><div class="subtitle">'+esc(content.subtitle)+'</div></div>'+bell;
  topbar.querySelector('[data-action=back]')?.setAttribute("aria-label","Go back");
  const current=["token","appointments","account"].includes(page)?page:"home";
  nav.innerHTML=[["home","home","Home"],["token","ticket","My Token"],["appointments","calendar","Appointments"],["account","user","Account"]].map(([id,img,label])=>

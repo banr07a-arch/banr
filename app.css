@@ -111,13 +111,6 @@
 .app:has(> #screen) .hero a { color: inherit; }
 .app:has(> #screen) .search input::placeholder { color: var(--patient-ink); opacity: .8; }
 
-.app:has(> #screen) .patient-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #151515;
-  font-size: clamp(32px, 8vw, 42px);
-}
 .patient-brand-emblem {
   position: relative;
   width: 44px;
@@ -135,4 +128,16 @@
   left: -24%;
   top: 50%;
   transform: translateY(-50%);
+}
+
+.app:has(> #screen) > .compact-home-header {
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  padding: 8px 22px 3px;
+}
+.compact-home-header .patient-brand-emblem { width: 38px; }
+.app:has(> .compact-home-header) > #screen { padding-top: 4px; }
+.app:has(> .compact-home-header) .intro { margin-bottom: 12px; }
+@media (max-width: 360px) {
+  .app:has(> #screen) > .compact-home-header { padding-inline: 14px; }
 }
